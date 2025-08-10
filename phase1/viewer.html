@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sepolia On-chain Viewer</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    /* Comfortable, screenshot-friendly layout */
+    :root{
+      --page-width: 1040px;   /* <— bump this to 1160px if you want even wider */
+      --gap: 14px;
+      --radius: 14px;
+      --border:#e5e7eb; --muted:#6b7280; --ink:#111827;
+    }
+    *{ box-sizing:border-box; }
+
+    body{
+      font-family: system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      line-height:1.45;
+      margin:18px auto;
+      padding:0 18px;
+      max-width: var(--page-width);
+      background:#fff;
+    }
+
+    h1{ margin:0 0 14px; font-size:1.35rem; }
+    h3{ margin:0 0 10px; font-size:1.05rem; }
+
+    .card{
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      padding:16px;
+      margin:14px 0;
+      box-shadow:0 1px 2px rgba(0,0,0,.04);
+      background:#fff;
+    }
+
+    label{ display:block; font-size:.92rem; color:#374151; margin:0 0 6px; }
+
+    input, textarea, select, button{
+      font:inherit;
+      width:100%;
+      padding:11px 12px;
+      border:1px solid #d1d5db;
+      border-radius:10px;
+      background:#fff;
+    }
+    textarea{ min-height:96px; resize:vertical; }
+    .mono, code{ font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+
+    /* Two-column layout that doesn’t overlap and wraps nicely */
+    .grid2{
+      display:grid;
+      gap:var(--gap);
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 880px){
+      .grid2{ grid-template-columns: 1fr 1fr; }
+    }
+
+    /* Horizontal rows for button groups etc. */
+    .row{
+      display:flex; gap:var(--gap); flex-wrap:wrap; align-items:center;
+      margin-top:8px;
+    }
+    .row > *{ flex: 1 1 220px; }   /* keeps things from getting too skinny */
+
+    /* Tables: keep them neat and scrollable if needed */
+    .table-wrap{ overflow-x:auto; }
+    table{ border-collapse:collapse; width:100%; min-width:680px; font-size:.94rem; }
+    th, td{ border-bottom:1px solid var(--border); padding:10px; text-align:left; vertical-align:top; }
+    th{ font-weight:600; color:var(--ink); background:#f9fafb; }
+    code{ background:#f3f4f6; padding:2px 6px; border-radius:6px; word-break:break-all; }
+
+    button{ background:#111827; color:#fff; cursor:pointer; border:1px solid #111827; }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+
+    .muted{ color:var(--muted); }
+    /* More breathing room around the black buttons */
+    button{
+      padding: 12px 16px;          /* slightly taller */
+      margin: 8px 0;               /* space above & below every button */
+      border-radius: 12px;         /* a touch rounder */
+    }
+
+    /* Extra gap when buttons are stacked one under another */
+    button + button{
+      margin-top: 12px;            /* gap between consecutive buttons */
+    }
+
+    /* (Optional) only for Compare card buttons */
+    #btnCompare, #btnUseForVerify{
+      margin-top: 10px;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="index.html">← Home</a>
+    <a href="register.html">MetaMask Console</a>
+  </div>
+
+  <h1>Sepolia On-chain Viewer</h1>
+
+  <div class="card">
+    <div class="grid2">
+      <div><label>RPC URL</label><input id="rpc" value="https://sepolia.infura.io/v3/c2b7a40258a44725896e33d57383c026"></div>
+      <div><label>Contract Address</label><input id="addr" value="0x877291c5FdbFa77f2961971dE560eAb1B25E3A36"></div>
+      <div><label>Dataset ID (bytes32)</label><input id="datasetId" class="mono" value="0x45456e1833a4ba5346b25a2c2e8ead1b1554477e5372bfc4274222c0ac425868"></div>
+      <div><label>Block range (start–end or “latest”)</label><input id="range" value="8952289"></div>
+    </div>
+    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button id="go">Fetch DatasetRegistered</button>
+      <button id="goModels">Fetch ModelRegistered</button>
+      <span id="status" class="muted" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
+  <div id="summary" class="card" style="display:none;"></div>
+  <div id="table" class="card" style="display:none;">
+    <h3 style="margin-top:0">DatasetRegistered</h3>
+    <table>
+      <thead><tr>
+        <th>#</th><th>Block</th><th>Version</th><th>Merkle root</th><th>CID</th><th>Registrant</th><th>Gas used</th><th>Tx</th><th>Time (UTC)</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div id="compareCard" class="card" style="display:none;">
+    <h3 style="margin-top:0">Merkle Root Comparison</h3>
+    <div class="grid2">
+      <div><label>On-chain version to compare</label><select id="versionSelect"></select></div>
+      <div><label>On-chain merkleRoot (selected version)</label><input id="onchainRoot" class="mono" readonly></div>
+      <div><label>Your local merkleRoot (paste from Colab)</label><input id="localRoot" class="mono" placeholder="0x..."></div>
+      <div><label>Result</label><input id="rootResult" class="mono" readonly></div>
+    </div>
+    <div>
+      <button id="btnCompare">Compare</button>
+      <button id="btnUseForVerify">Use this version for Verify</button>
+      <span id="statusCompare" class="muted" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
+  <div id="summaryModels" class="card" style="display:none;"></div>
+  <div id="tableModels" class="card" style="display:none;">
+    <h3 style="margin-top:0">ModelRegistered</h3>
+    <table style="margin-top:12px;">
+      <thead><tr>
+        <th>#</th><th>Block</th><th>modelId</th><th>datasetId</th><th>dsVersion</th><th>configHash</th><th>Registrant</th><th>Gas</th><th>Tx</th><th>Time (UTC)</th>
+      </tr></thead>
+      <tbody id="rowsModels"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">computeDatasetId(name)</h3>
+    <div class="grid2">
+      <div><label>Dataset name (string)</label><input id="dsName" placeholder="e.g., MIMIC-IV-demo-2.2"></div>
+      <div><label>Result</label><input id="dsIdOut" class="mono" readonly></div>
+    </div>
+    <button id="btnCompute">Compute via Contract</button>
+    <span id="statusCompute" class="muted" style="margin-left:10px;"></span>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">getModel(modelId)</h3>
+    <div class="grid2">
+      <div><label>modelId (bytes32)</label><input id="modelIdGet" class="mono" placeholder="0x..."></div>
+      <div><label>Result</label><input id="modelOut" class="mono" readonly></div>
+    </div>
+    <button id="btnGetModel">Fetch</button>
+    <span id="statusGetModel" class="muted" style="margin-left:10px;"></span>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">verifyFileHash(datasetId, version, leafHash, proof[])</h3>
+    <div class="grid2">
+      <div><label>datasetId (bytes32)</label><input id="v_ds" class="mono" placeholder="0x..."></div>
+      <div><label>version (uint256)</label><input id="v_ver" type="number" min="1" step="1" value="1"></div>
+      <div><label>leafHash (bytes32)</label><input id="v_leaf" class="mono" placeholder="0x..."></div>
+      <div><label>proof (bytes32[], comma/space separated)</label><textarea id="v_proof" class="mono" placeholder="0x..., 0x..., 0x..."></textarea></div>
+    </div>
+
+    <!-- NEW: load verify_bundle.json / manifest.json to auto-fill -->
+    <div class="grid2" style="margin-top:8px;">
+      <div>
+        <label>Or load verify_bundle.json (from Colab)</label>
+        <input id="verifyBundle" type="file" accept=".json">
+      </div>
+      <div style="display:flex; align-items:flex-end;">
+        <button id="btnLoadBundle">Load bundle → fill fields</button>
+      </div>
+    </div>
+
+    <button id="btnVerify">Verify</button>
+    <span id="statusVerify" class="muted" style="margin-left:10px;"></span>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const ABI = [{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"indexed":false,"internalType":"uint256","name":"version","type":"uint256"},{"indexed":false,"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"indexed":false,"internalType":"string","name":"metadataCID","type":"string"},{"indexed":true,"internalType":"address","name":"registrant","type":"address"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"DatasetRegistered","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"bytes32","name":"modelId","type":"bytes32"},{"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"indexed":false,"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"indexed":false,"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"indexed":true,"internalType":"address","name":"registrant","type":"address"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"ModelRegistered","type":"event"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"authorized","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"name","type":"string"}],"name":"computeDatasetId","outputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"stateMutability":"pure","type":"function"},{"inputs":[{"internalType":"bytes32","name":"","type":"bytes32"},{"internalType":"uint256","name":"","type":"uint256"}],"name":"datasets","outputs":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"version","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"}],"name":"getDatasetVersions","outputs":[{"components":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"version","type":"uint256"}],"internalType":"struct DatasetRegistry.DatasetVersion[]","name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"}],"name":"getModel","outputs":[{"components":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"}],"internalType":"struct DatasetRegistry.ModelRecord","name":"","type":"tuple"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"name":"models","outputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"}],"name":"registerDataset","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"},{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"}],"name":"registerModel","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_addr","type":"address"},{"internalType":"bool","name":"_status","type":"bool"}],"name":"setAuthorized","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"version","type":"uint256"},{"internalType":"bytes32","name":"leafHash","type":"bytes32"},{"internalType":"bytes32[]","name":"proof","type":"bytes32[]"}],"name":"verifyFileHash","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"}];
+
+    const $ = (id) => document.getElementById(id);
+    const short = (s, pre=6, post=4) => (s && s.length > (pre+post+2) ? s.slice(0,pre+2)+"…"+s.slice(-post) : s || "");
+    const isBytes32 = (s) => /^0x[0-9a-fA-F]{64}$/.test(s);
+    const isAddress = (s) => { try { ethers.getAddress(s); return true; } catch { return false; } };
+
+    const parseRange = async (provider, raw) => {
+      const head = await provider.getBlockNumber();
+      if (!raw) return { start: Math.max(0, head - 50000), end: head };
+      const parts = raw.split("-");
+      const start = parseInt(parts[0], 10);
+      if (Number.isNaN(start)) throw new Error(`Invalid start block: "${parts[0]}"`);
+      const end = (parts.length === 1 || !parts[1] || parts[1].toLowerCase() === "latest") ? head :
+        (Number.isNaN(parseInt(parts[1], 10)) ? (()=>{throw new Error(`Invalid end block: "${parts[1]}"`)})() : parseInt(parts[1],10));
+      if (start > end) throw new Error(`Start block (${start}) > end block (${end})`);
+      return { start, end };
+    };
+    const ensureProviderContract = async () => {
+      const rpc = $("rpc").value.trim();
+      const addr = $("addr").value.trim();
+      if (!isAddress(addr)) throw new Error("Invalid contract address");
+      const provider = new ethers.JsonRpcProvider(rpc);
+      const code = await provider.getCode(addr);
+      if (!code || code === "0x") throw new Error(`No contract code at ${addr} on Sepolia`);
+      return { provider, addr, contract: new ethers.Contract(addr, ABI, provider) };
+    };
+
+    // ---- NEW: Always-scan DatasetRegistered so we have block, tx, and gas ----
+    async function scanDatasetEvents(provider, addr, dsId, start, end) {
+      const TOPIC0 = ethers.id("DatasetRegistered(bytes32,uint256,bytes32,string,address,uint256)");
+      const step = 5000;
+      const out = [];
+      for (let from = start; from <= end; from += step) {
+        const to = Math.min(from + step - 1, end);
+        const logs = await provider.getLogs({ address: addr, fromBlock: from, toBlock: to, topics: [TOPIC0, dsId] });
+        for (const log of logs) {
+          const [version, merkleRoot, metadataCID, timestamp] =
+            ethers.AbiCoder.defaultAbiCoder().decode(["uint256","bytes32","string","uint256"], log.data);
+          const registrant = ethers.getAddress("0x" + log.topics[2].slice(26));
+          let gasUsed = "";
+          try {
+            const rc = await provider.getTransactionReceipt(log.transactionHash);
+            gasUsed = rc?.gasUsed?.toString?.() || "";
+          } catch {}
+          out.push({
+            version, merkleRoot, metadataCID, timestamp, registrant,
+            _block: log.blockNumber, _tx: log.transactionHash, gasUsed
+          });
+        }
+      }
+      return out;
+    }
+
+    let _dsVersions = [];
+    $("go").onclick = async () => {
+      $("go").disabled = true; $("status").textContent = "Fetching dataset versions…";
+      $("rows").innerHTML = ""; $("table").style.display="none"; $("summary").style.display="none"; $("compareCard").style.display="none";
+      try {
+        const { provider, addr } = await ensureProviderContract();
+        const dsId = $("datasetId").value.trim();
+        if (!isBytes32(dsId)) throw new Error("Dataset ID must be 0x + 64 hex chars");
+        const { start, end } = await parseRange(provider, $("range").value.trim());
+
+        // NEW: always use the scanner so we get tx + gas
+        const versions = await scanDatasetEvents(provider, addr, dsId, start, end);
+        if (!versions.length) { $("status").textContent = "No versions found for that dataset."; $("go").disabled=false; return; }
+
+        _dsVersions = versions.slice();
+
+        const rows = versions.map((v,i)=>({
+          idx:i+1, blockNumber:v._block || "", version:Number(v.version), merkleRoot:v.merkleRoot,
+          cid:v.metadataCID, registrant:v.registrant, gasUsed:v.gasUsed||"", txHash:v._tx||"",
+          iso: v.timestamp ? new Date(Number(v.timestamp)*1000).toISOString() : ""
+        })).sort((a,b)=> (a.blockNumber||0)-(b.blockNumber||0));
+
+        $("summary").style.display="block";
+        $("summary").innerHTML = `<div><strong>${rows.length}</strong> version(s) for dataset <code class="mono">${short(dsId,10,8)}</code>. Contract <code class="mono">${short(addr,10,8)}</code>.</div>`;
+        const tbody=$("rows"); tbody.innerHTML="";
+        for(const r of rows){
+          const tr=document.createElement("tr");
+          tr.innerHTML=`
+            <td>${r.idx}</td><td>${r.blockNumber??""}</td><td>${r.version}</td>
+            <td><code class="mono" title="${r.merkleRoot}">${short(r.merkleRoot,10,10)}</code></td>
+            <td>${r.cid?`<a href="https://ipfs.io/ipfs/${r.cid}" target="_blank">${short(r.cid,6,6)}</a>`:""}</td>
+            <td>${r.registrant?`<a href="https://sepolia.etherscan.io/address/${r.registrant}" target="_blank">${short(r.registrant)}</a>`:""}</td>
+            <td class="mono">${r.gasUsed||""}</td>
+            <td>${r.txHash?`<a href="https://sepolia.etherscan.io/tx/${r.txHash}" target="_blank">${short(r.txHash)}</a>`:""}</td>
+            <td class="mono">${r.iso}</td>`;
+          tbody.appendChild(tr);
+        }
+        $("table").style.display="block";
+        $("status").textContent = "Done.";
+
+        const sel = $("versionSelect");
+        sel.innerHTML = "";
+        const sorted = versions.slice().sort((a,b)=> Number(a.version)-Number(b.version));
+        for (const v of sorted) {
+          const opt = document.createElement("option"); opt.value = String(Number(v.version)); opt.textContent = `Version ${Number(v.version)}`; sel.appendChild(opt);
+        }
+        const updateOnchainRoot = () => {
+          const chosen = sorted.find(v => Number(v.version) === Number(sel.value));
+          $("onchainRoot").value = chosen ? String(chosen.merkleRoot) : "";
+          $("rootResult").value = ""; $("statusCompare").textContent = "";
+        };
+        sel.onchange = updateOnchainRoot;
+        sel.value = sel.options[sel.options.length - 1]?.value || "";
+        updateOnchainRoot();
+        $("compareCard").style.display = "block";
+      } catch(e){ console.error(e); $("status").textContent = `Error: ${e?.message||e}`; }
+      finally { $("go").disabled=false; }
+    };
+
+    $("btnCompare").onclick = () => {
+      const local = $("localRoot").value.trim().toLowerCase();
+      const onchain = $("onchainRoot").value.trim().toLowerCase();
+      if (!/^0x[0-9a-f]{64}$/.test(local)) { $("statusCompare").textContent = "Enter a valid 0x + 64-hex local merkleRoot."; $("rootResult").value = ""; return; }
+      const match = local === onchain;
+      $("rootResult").value = match ? "✅ MATCH" : "❌ MISMATCH";
+      $("statusCompare").textContent = match ? "Roots match." : "Roots differ.";
+    };
+    $("btnUseForVerify").onclick = () => {
+      $("v_ds").value = $("datasetId").value.trim();
+      $("v_ver").value = $("versionSelect").value;
+      $("statusCompare").textContent = "Copied datasetId + version into Verify section.";
+    };
+
+    async function fetchModels() {
+      $("statusModels").textContent = "Fetching model events…";
+      $("rowsModels").innerHTML = ""; $("tableModels").style.display="none"; $("summaryModels").style.display="none";
+      try {
+        const rpc = $("rpc").value.trim(), addr = $("addr").value.trim();
+        if (!isAddress(addr)) throw new Error("Invalid contract address");
+        const provider = new ethers.JsonRpcProvider(rpc);
+        const code = await provider.getCode(addr);
+        if (!code || code === "0x") throw new Error(`No contract code at ${addr} on Sepolia`);
+        const { start, end } = await parseRange(provider, $("range").value.trim());
+        const modelId = $("modelIdFilter")?.value?.trim?.() ?? "", dsIdF = $("datasetIdFilter")?.value?.trim?.() ?? "";
+        const topics = [ ethers.id("ModelRegistered(bytes32,bytes32,uint256,bytes32,address,uint256)") ];
+        topics[1] = isBytes32(modelId) ? modelId : null;
+        topics[2] = isBytes32(dsIdF) ? dsIdF : null;
+
+        let logsAll = [], step = 5000;
+        for (let from = start; from <= end; from += step) {
+          const to = Math.min(from + step - 1, end);
+          const logs = await provider.getLogs({ address: addr, fromBlock: from, toBlock: to, topics });
+          logsAll.push(...logs);
+        }
+        if (!logsAll.length) { $("statusModels").textContent = "No ModelRegistered events in range/filter."; return; }
+
+        const rows = [];
+        for (let i=0;i<logsAll.length;i++){
+          const log = logsAll[i];
+          const [datasetVersion, trainingConfigHash, timestamp] = ethers.AbiCoder.defaultAbiCoder().decode(["uint256","bytes32","uint256"], log.data);
+          const modelIdX = log.topics[1], datasetIdX = log.topics[2], registrant = ethers.getAddress("0x" + log.topics[3].slice(26));
+          let gasUsed = "", blockNumber = log.blockNumber, ts = Number(timestamp);
+          try { const rc = await provider.getTransactionReceipt(log.transactionHash); gasUsed = rc?.gasUsed?.toString?.()||""; } catch {}
+          rows.push({ idx:i+1, blockNumber, modelId:modelIdX, datasetId:datasetIdX, datasetVersion:Number(datasetVersion), trainingConfigHash, registrant, gasUsed, txHash:log.transactionHash, iso: ts ? new Date(ts*1000).toISOString() : "" });
+        }
+        rows.sort((a,b)=> (a.blockNumber||0)-(b.blockNumber||0));
+        $("summaryModels").style.display="block";
+        $("summaryModels").innerHTML = `<div><strong>${rows.length}</strong> ModelRegistered event(s).</div>`;
+        const tbody=$("rowsModels"); tbody.innerHTML="";
+        for(const r of rows){
+          const tr=document.createElement("tr");
+          tr.innerHTML=`
+            <td>${r.idx}</td><td>${r.blockNumber}</td>
+            <td><code class="mono" title="${r.modelId}">${short(r.modelId,10,10)}</code></td>
+            <td><code class="mono" title="${r.datasetId}">${short(r.datasetId,10,10)}</code></td>
+            <td>${r.datasetVersion}</td>
+            <td><code class="mono" title="${r.trainingConfigHash}">${short(r.trainingConfigHash,10,10)}</code></td>
+            <td><a href="https://sepolia.etherscan.io/address/${r.registrant}" target="_blank">${short(r.registrant)}</a></td>
+            <td class="mono">${r.gasUsed}</td>
+            <td><a href="https://sepolia.etherscan.io/tx/${r.txHash}" target="_blank">${short(r.txHash)}</a></td>
+            <td class="mono">${r.iso}</td>`;
+          tbody.appendChild(tr);
+        }
+        $("tableModels").style.display="block"; $("statusModels").textContent = "Done.";
+      } catch(e){ console.error(e); $("statusModels").textContent = `Error: ${e?.message||e}`; }
+    }
+    $("goModels").onclick = fetchModels;
+
+    $("btnCompute").onclick = async () => {
+      $("btnCompute").disabled = true; $("statusCompute").textContent = "Computing…";
+      try {
+        const { contract } = await ensureProviderContract();
+        const name = $("dsName").value; if (!name) throw new Error("Enter a dataset name");
+        $("dsIdOut").value = await contract.computeDatasetId(name);
+        $("statusCompute").textContent = "Done.";
+      } catch(e){ console.error(e); $("statusCompute").textContent = `Error: ${e?.message||e}`; }
+      finally { $("btnCompute").disabled=false; }
+    };
+    $("btnGetModel").onclick = async () => {
+      $("btnGetModel").disabled = true; $("statusGetModel").textContent = "Fetching…";
+      try {
+        const { contract } = await ensureProviderContract();
+        const mid = $("modelIdGet").value.trim();
+        if (!isBytes32(mid)) throw new Error("modelId must be bytes32");
+        const rec = await contract.getModel(mid);
+        $("modelOut").value = JSON.stringify({
+          datasetId: rec.datasetId, datasetVersion: Number(rec.datasetVersion),
+          trainingConfigHash: rec.trainingConfigHash, timestamp: Number(rec.timestamp),
+          registrant: rec.registrant
+        }, null, 2);
+        $("statusGetModel").textContent = "Done.";
+      } catch(e){ console.error(e); $("statusGetModel").textContent = `Error: ${e?.message||e}`; }
+      finally { $("btnGetModel").disabled=false; }
+    };
+    $("btnVerify").onclick = async () => {
+      $("btnVerify").disabled = true; $("statusVerify").textContent = "Verifying…";
+      try {
+        const { contract } = await ensureProviderContract();
+        const ds = $("v_ds").value.trim(), ver = parseInt($("v_ver").value,10), leaf = $("v_leaf").value.trim();
+        const proof = $("v_proof").value.trim() ? $("v_proof").value.trim().split(/[\s,]+/).filter(Boolean) : [];
+        const isB32 = (x)=>/^0x[0-9a-fA-F]{64}$/.test(x);
+        if (!isB32(ds)) throw new Error("datasetId must be bytes32");
+        if (!Number.isInteger(ver) || ver < 1) throw new Error("version must be a positive integer");
+        if (!isB32(leaf)) throw new Error("leafHash must be bytes32");
+        for (const p of proof) if (!isB32(p)) throw new Error(`Invalid proof element: ${p}`);
+        const ok = await contract.verifyFileHash(ds, ver, leaf, proof);
+        $("statusVerify").textContent = ok ? "✅ Proof is valid (included)" : "❌ Not included / bad proof";
+      } catch(e){ console.error(e); $("statusVerify").textContent = `Error: ${e?.message||e}`; }
+      finally { $("btnVerify").disabled=false; }
+    };
+
+    // helpers
+    const b32 = (x) => /^0x[0-9a-fA-F]{64}$/.test(String(x||'').trim());
+    function pick(obj, paths) {
+      for (const p of paths) {
+        const parts = p.split('.');
+        let cur = obj, ok = true;
+        for (const part of parts) {
+          if (cur && Object.prototype.hasOwnProperty.call(cur, part)) cur = cur[part];
+          else { ok = false; break; }
+        }
+        if (ok && cur != null) return cur;
+      }
+      return undefined;
+    }
+
+    // Merkle helpers (keccak256 of 32B|32B; duplicate last on odd)
+    const keccak = ethers.keccak256;
+    const toBytes = ethers.getBytes;
+    const toHex   = ethers.hexlify;
+    const concat64 = (a,b) => { const out = new Uint8Array(64); out.set(a,0); out.set(b,32); return out; };
+    function merkleRootFromLeaves(leaves){
+      if (!leaves.length) return null;
+      let level = leaves.slice();
+      while (level.length > 1){
+        if (level.length % 2 === 1) level.push(level[level.length-1]);
+        const next = [];
+        for (let i=0;i<level.length;i+=2){
+          next.push( toBytes(keccak(concat64(level[i], level[i+1]))) );
+        }
+        level = next;
+      }
+      return toHex(level[0]);
+    }
+    function merkleProofFromLeaves(leaves, idx){
+      let level = leaves.slice(), i = idx, proof = [];
+      while (level.length > 1){
+        if (level.length % 2 === 1) level.push(level[level.length-1]);
+        const next = [];
+        for (let k=0;k<level.length;k+=2){
+          const L = level[k], R = level[k+1];
+          if (k===i || k+1===i){
+            proof.push( toHex(k===i ? R : L) );
+            i = next.length;
+          }
+          next.push( toBytes(keccak(concat64(L,R))) );
+        }
+        level = next;
+      }
+      return proof;
+    }
+
+    // Load verify bundle → fill fields (now also maps root → version via on-chain scan)
+    document.getElementById('btnLoadBundle').onclick = async () => {
+      const st = document.getElementById('statusVerify');
+      const fileInp = document.getElementById('verifyBundle');
+      if (!fileInp.files?.[0]) { st.textContent = 'Pick a JSON file first.'; return; }
+
+      try {
+        const jb = JSON.parse(await fileInp.files[0].text());
+
+        const ds    = jb.datasetId || jb.dataset_id;
+        const ver   = jb.version   ?? jb.datasetVersion ?? jb.dsVersion;
+        const leaf  = jb.leafHash  || jb.leaf || jb.targetLeaf || jb.target_leaf;
+        const proof = jb.proof     || jb.proofArray;
+        const root  = jb.merkleRoot || jb.root;
+
+        if (ds)   $('v_ds').value   = ds;
+        if (leaf) $('v_leaf').value = leaf;
+        if (Array.isArray(proof)) $('v_proof').value = proof.join(', ');
+
+        if (ds && root) {
+          const { provider, addr } = await ensureProviderContract();
+          const { start, end } = await parseRange(provider, $('range').value.trim());
+          const versions = await scanDatasetEvents(provider, addr, ds, start, end);
+          const hit = versions.find(v => String(v.merkleRoot).toLowerCase() === String(root).toLowerCase());
+          if (hit) $('v_ver').value = String(Number(hit.version));
+          else if (ver != null) $('v_ver').value = String(ver);
+        } else if (ver != null) {
+          $('v_ver').value = String(ver);
+        }
+
+        if ($('v_ds').value && $('v_ver').value && $('v_leaf').value && $('v_proof').value)
+          st.textContent = 'Loaded all fields ✔';
+        else
+          st.textContent = 'Loaded some fields; check version/leaf/proof.';
+      } catch (e) {
+        console.error(e);
+        st.textContent = `Error: ${e.message || e}`;
+      }
+    };
+  });
+  </script>
+</body>
+</html>

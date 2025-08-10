@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Register Dataset & Model (IPFS + Sepolia)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+    :root { --w: 880px; }
+    * , *::before, *::after { box-sizing: border-box; }
+
+    body {
+        font-family: system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+        margin: 24px;
+        display:flex;
+        justify-content:center;
+    }
+    .wrap { width: min(95vw, var(--w)); }
+
+    .card {
+        border:1px solid #e5e7eb;
+        border-radius:16px;
+        padding:18px;
+        margin-bottom:18px;
+        box-shadow:0 1px 2px rgba(0,0,0,.06);
+    }
+
+    label { display:block; font-size:.9rem; margin-bottom:6px; color:#374151; }
+
+    input, textarea, select {
+        width:100%;
+        max-width:100%;
+        padding:10px;
+        border:1px solid #d1d5db;
+        border-radius:10px;
+        margin-bottom:12px;
+        font:inherit;
+    }
+    textarea { min-height:90px; resize: vertical; }
+
+    button {
+        padding:10px 14px;
+        border:1px solid #111827;
+        background:#111827;
+        color:#fff;
+        border-radius:10px;
+        cursor:pointer;
+    }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+
+    /* Responsive two–column rows that don’t overflow */
+    .row {
+        display:grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap:16px;
+        align-items:start;
+    }
+    /* CRITICAL: allow grid items to actually shrink so long URLs don’t push out */
+    .row > div { min-width: 0; }
+
+    /* Make long monospace values (URLs/CIDs) clip nicely instead of pushing layout */
+    .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .muted { color:#6b7280; }
+    </style>
+
+</head>
+<body>
+<div class="wrap">
+  <h2 style="margin:8px 0 16px;">Register Dataset & Model</h2>
+
+  <!-- Wallet / Contract -->
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>RPC</label>
+        <input id="rpc" value="https://sepolia.infura.io/v3/c2b7a40258a44725896e33d57383c026">
+      </div>
+      <div>
+        <label>Contract</label>
+        <input id="addr" value="0x877291c5FdbFa77f2961971dE560eAb1B25E3A36">
+      </div>
+    </div>
+    <div class="row">
+      <div><button id="btnConnect">Connect MetaMask</button></div>
+      <div><span id="who" class="muted"></span></div>
+    </div>
+  </div>
+
+  <!-- Step 1: IPFS -->
+  <div class="card">
+    <h3 style="margin-top:0">Step 1 — Upload metadata.json to IPFS</h3>
+    <div class="row">
+      <div>
+        <label>IPFS proxy URL</label>
+        <input id="ipfsUrl" value="http://127.0.0.1:8020">
+      </div>
+      <div>
+        <label>Pick metadata.json (will be pinned via local proxy)</label>
+        <input id="metaFile" type="file" accept=".json,application/json">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Metadata CID (auto)</label>
+        <input id="cid" class="mono" placeholder="ipfs CID will appear here" readonly>
+      </div>
+      <div>
+        <label>Gateway URL</label>
+        <input id="cidUrl" class="mono" placeholder="https://.../ipfs/<cid>" readonly>
+      </div>
+    </div>
+    <textarea id="metaPreview" class="mono" placeholder="First 300 chars of the selected file will show here…" readonly></textarea>
+    <div>
+      <button id="btnUpload">Upload to IPFS</button>
+      <span id="ipfsStatus" class="muted" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
+  <!-- Step 2: registerDataset -->
+  <div class="card">
+    <h3 style="margin-top:0">Step 2 — Register dataset on-chain</h3>
+    <div class="row">
+      <div>
+        <label>Dataset name (string)</label>
+        <input id="dsName" placeholder="e.g., MIMIC-IV-Demo-v2.2">
+      </div>
+      <div>
+        <label>Computed datasetId (bytes32)</label>
+        <input id="dsId" class="mono" readonly>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Merkle root (bytes32)</label>
+        <input id="merkleRoot" class="mono" placeholder="0x...">
+      </div>
+      <div>
+        <label>metadataCID (from Step 1)</label>
+        <input id="metadataCID" class="mono" placeholder="CID..." readonly>
+      </div>
+    </div>
+    <div>
+      <button id="btnCompute">Compute datasetId</button>
+      <button id="btnRegister">registerDataset()</button>
+      <span id="regStatus" class="muted" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
+  <!-- Step 3: registerModel -->
+  <div class="card">
+    <h3 style="margin-top:0">Step 3 — Register model on-chain</h3>
+    <div class="row">
+      <div>
+        <label>Model name (string)</label>
+        <input id="modelName" placeholder="e.g., Qwen-3B-ft-mimic-demo">
+      </div>
+      <div>
+        <label>Computed modelId (bytes32)</label>
+        <input id="modelId" class="mono" readonly>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Dataset ID for this model (bytes32)</label>
+        <input id="model_dsId" class="mono" placeholder="0x..." >
+      </div>
+      <div>
+        <label>Dataset version (uint256)</label>
+        <input id="model_dsVer" type="number" min="1" step="1" value="1">
+      </div>
+    </div>
+    <div>
+      <label>Training config (string/JSON, will be keccak256 UTF-8)</label>
+      <textarea id="cfgText" class="mono" placeholder='{"lr": 3e-5, "epochs": 2, ...}'></textarea>
+    </div>
+    <div class="row">
+      <div>
+        <label>Computed trainingConfigHash (bytes32)</label>
+        <input id="cfgHash" class="mono" readonly>
+      </div>
+      <div style="display:flex;align-items:end;gap:8px;">
+        <button id="btnComputeModel">Compute modelId</button>
+        <button id="btnComputeCfg">Compute cfg hash</button>
+        <button id="btnCopyDsId">Use datasetId from Step 2</button>
+      </div>
+    </div>
+    <div>
+      <button id="btnRegisterModel">registerModel()</button>
+      <span id="modelStatus" class="muted" style="margin-left:10px;"></span>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
+<script>
+/* ---------- helpers ---------- */
+const $ = (id) => document.getElementById(id);
+const isBytes32 = (s) => /^0x[0-9a-fA-F]{64}$/.test(s);
+const isAddress = (s) => { try { ethers.getAddress(s); return true; } catch { return false; } };
+const setStatus = (id, msg) => $(id).textContent = msg;
+
+/* ---------- file preview & IPFS upload ---------- */
+$('metaFile').addEventListener('change', async (e) => {
+  const f = e.target.files?.[0];
+  if (!f) { $('metaPreview').value = ''; return; }
+  try { $('metaPreview').value = (await f.text()).slice(0, 300); }
+  catch { $('metaPreview').value = '(failed to read file)'; }
+});
+
+$('btnUpload').onclick = async () => {
+  const base = $('ipfsUrl').value.trim().replace(/\/+$/,'');
+  const f = $('metaFile').files?.[0];
+  if (!f) { setStatus('ipfsStatus','Pick metadata.json first.'); return; }
+  setStatus('ipfsStatus','Uploading…');
+  try {
+    const fd = new FormData();
+    fd.append('file', f, f.name);
+    const r = await fetch(base + '/ipfs/pin_file', { method:'POST', body: fd });
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    const j = await r.json();
+    $('cid').value = j.cid || '';
+    $('cidUrl').value = j.gateway_url || '';
+    $('metadataCID').value = j.cid || '';
+    setStatus('ipfsStatus','Pinned ✅');
+  } catch (e){
+    console.error(e);
+    setStatus('ipfsStatus', `Error: ${e.message || e}`);
+  }
+};
+
+/* ---------- MetaMask + contract ---------- */
+let signer = null, contract = null;
+
+const ABI = [
+  {"inputs":[],"stateMutability":"nonpayable","type":"constructor"},
+  {"anonymous":false,"inputs":[
+    {"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},
+    {"indexed":false,"internalType":"uint256","name":"version","type":"uint256"},
+    {"indexed":false,"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},
+    {"indexed":false,"internalType":"string","name":"metadataCID","type":"string"},
+    {"indexed":true,"internalType":"address","name":"registrant","type":"address"},
+    {"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],
+   "name":"DatasetRegistered","type":"event"},
+  {"anonymous":false,"inputs":[
+    {"indexed":true,"internalType":"bytes32","name":"modelId","type":"bytes32"},
+    {"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},
+    {"indexed":false,"internalType":"uint256","name":"datasetVersion","type":"uint256"},
+    {"indexed":false,"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},
+    {"indexed":true,"internalType":"address","name":"registrant","type":"address"},
+    {"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],
+   "name":"ModelRegistered","type":"event"},
+  {"inputs":[{"internalType":"string","name":"name","type":"string"}],
+   "name":"computeDatasetId","outputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],
+   "stateMutability":"pure","type":"function"},
+  {"inputs":[
+    {"internalType":"bytes32","name":"datasetId","type":"bytes32"},
+    {"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},
+    {"internalType":"string","name":"metadataCID","type":"string"}],
+   "name":"registerDataset","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[
+    {"internalType":"bytes32","name":"modelId","type":"bytes32"},
+    {"internalType":"bytes32","name":"datasetId","type":"bytes32"},
+    {"internalType":"uint256","name":"datasetVersion","type":"uint256"},
+    {"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"}],
+   "name":"registerModel","outputs":[],"stateMutability":"nonpayable","type":"function"}
+];
+
+$('btnConnect').onclick = async () => {
+  try {
+    if (!window.ethereum) { setStatus('who','MetaMask not found'); return; }
+    await window.ethereum.request({ method: 'eth_requestAccounts' });
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const net = await provider.getNetwork();
+    if (net?.chainId && net.chainId !== 11155111n) {
+      setStatus('who', `Connected (chainId=${net.chainId}). Sepolia is 11155111.`);
+    }
+    signer = await provider.getSigner();
+    const addr = await signer.getAddress();
+    $('who').textContent = `Connected: ${addr}`;
+
+    const contractAddr = $('addr').value.trim();
+    if (!isAddress(contractAddr)) { setStatus('who','Invalid contract address'); return; }
+    contract = new ethers.Contract(contractAddr, ABI, signer);
+  } catch (e){
+    console.error(e);
+    setStatus('who', `Error: ${e.message || e}`);
+  }
+};
+
+/* ---------- registerDataset ---------- */
+$('btnCompute').onclick = async () => {
+  const name = $('dsName').value || '';
+  const id = ethers.id(name); // keccak256(utf8(name))
+  $('dsId').value = id;
+  // keep model section in sync by default
+  if (!$('model_dsId').value) $('model_dsId').value = id;
+};
+
+$('btnRegister').onclick = async () => {
+  try {
+    if (!signer || !contract) { setStatus('regStatus','Connect MetaMask first.'); return; }
+    const dsId = $('dsId').value.trim();
+    const root = $('merkleRoot').value.trim();
+    const cid  = $('metadataCID').value.trim();
+    if (!isBytes32(dsId)) { setStatus('regStatus','datasetId must be bytes32'); return; }
+    if (!isBytes32(root)) { setStatus('regStatus','merkleRoot must be bytes32'); return; }
+    if (!cid) { setStatus('regStatus','metadataCID empty — upload metadata first'); return; }
+
+    setStatus('regStatus','Sending tx…');
+    const tx = await contract.registerDataset(dsId, root, cid);
+    await tx.wait();
+    setStatus('regStatus', `Done ✅ Tx: ${tx.hash}`);
+  } catch (e){
+    console.error(e);
+    setStatus('regStatus', `Error: ${e.message || e}`);
+  }
+};
+
+/* ---------- registerModel ---------- */
+$('btnComputeModel').onclick = () => {
+  const name = $('modelName').value || '';
+  $('modelId').value = ethers.id(name); // keccak256(utf8(name))
+};
+
+$('btnComputeCfg').onclick = () => {
+  const txt = $('cfgText').value || '';
+  $('cfgHash').value = ethers.id(txt); // keccak256(utf8(config))
+};
+
+$('btnCopyDsId').onclick = () => {
+  const v = $('dsId').value.trim();
+  if (isBytes32(v)) $('model_dsId').value = v;
+};
+
+$('btnRegisterModel').onclick = async () => {
+  try {
+    if (!signer || !contract) { setStatus('modelStatus','Connect MetaMask first.'); return; }
+    const modelId = $('modelId').value.trim();
+    const dsId    = $('model_dsId').value.trim();
+    const ver     = parseInt($('model_dsVer').value, 10);
+    const cfgHash = $('cfgHash').value.trim();
+
+    if (!isBytes32(modelId)) { setStatus('modelStatus','modelId must be bytes32'); return; }
+    if (!isBytes32(dsId))    { setStatus('modelStatus','datasetId must be bytes32'); return; }
+    if (!Number.isInteger(ver) || ver < 1) { setStatus('modelStatus','datasetVersion must be >= 1'); return; }
+    if (!isBytes32(cfgHash)) { setStatus('modelStatus','trainingConfigHash must be bytes32'); return; }
+
+    setStatus('modelStatus','Sending tx…');
+    const tx = await contract.registerModel(modelId, dsId, ver, cfgHash);
+    await tx.wait();
+    setStatus('modelStatus', `Done ✅ Tx: ${tx.hash}`);
+  } catch (e){
+    console.error(e);
+    setStatus('modelStatus', `Error: ${e.message || e}`);
+  }
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+# Secrets / local config
+ipfs_config.json
+.env
+
+# Local data / artifacts
+mimic_demo.zip
+tokenized_data/
+preprocessing_metadata.json
+manifest.json
+merkle_hashes.txt
+verify_bundle.json
+debug_bundle.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Node/web cruft
+node_modules/
+dist/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

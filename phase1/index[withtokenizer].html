@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>LLM–Blockchain Prototype: Sepolia + End-to-End ZIP → Merkle</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body {font-family: system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; margin:24px; line-height:1.4;}
+    .card {border:1px solid #e5e7eb; border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 1px 2px rgba(0,0,0,.04);}
+    label {display:block; font-size:.9rem; margin-bottom:6px; color:#374151;}
+    input, textarea, select {width:100%; padding:10px; border:1px solid #d1d5db; border-radius:8px; margin-bottom:12px; font:inherit;}
+    textarea {min-height:90px;}
+    button {padding:10px 14px; border:1px solid #111827; background:#111827; color:#fff; border-radius:10px; cursor:pointer}
+    button:disabled {opacity:.5; cursor:not-allowed}
+    table {border-collapse:collapse; width:100%; font-size:.92rem;}
+    th,td {border-bottom:1px solid #e5e7eb; padding:10px; text-align:left; vertical-align:top;}
+    th {font-weight:600; color:#111827; background:#f9fafb;}
+    code {background:#f3f4f6; padding:2px 6px; border-radius:6px;}
+    .mono {font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+    .muted {color:#6b7280;}
+    .grid2 {display:grid; grid-template-columns: repeat(2, minmax(220px,1fr)); gap:12px;}
+  </style>
+</head>
+<body>
+  <h1>Sepolia On-chain Records</h1>
+
+  <div class="card">
+    <div class="grid2">
+      <div><label>RPC URL</label><input id="rpc" value="https://sepolia.infura.io/v3/c2b7a40258a44725896e33d57383c026"></div>
+      <div><label>Contract Address</label><input id="addr" value="0x877291c5FdbFa77f2961971dE560eAb1B25E3A36"></div>
+      <div><label>Dataset ID (bytes32)</label><input id="datasetId" class="mono" value="0x45456e1833a4ba5346b25a2c2e8ead1b1554477e5372bfc4274222c0ac425868"></div>
+      <div><label>Block range (start–end or “latest”)</label><input id="range" value="8952289"></div>
+    </div>
+    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button id="go">Fetch DatasetRegistered</button>
+      <button id="goModels">Fetch ModelRegistered</button>
+      <span id="status" class="muted" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
+  <div id="summary" class="card" style="display:none;"></div>
+  <div id="table" class="card" style="display:none;">
+    <h3 style="margin-top:0">DatasetRegistered</h3>
+    <table>
+      <thead><tr>
+        <th>#</th><th>Block</th><th>Version</th><th>Merkle root</th><th>CID</th><th>Registrant</th><th>Gas used</th><th>Tx</th><th>Time (UTC)</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div id="compareCard" class="card" style="display:none;">
+    <h3 style="margin-top:0">Merkle Root Comparison</h3>
+    <div class="grid2">
+      <div><label>On-chain version to compare</label><select id="versionSelect"></select></div>
+      <div><label>On-chain merkleRoot (selected version)</label><input id="onchainRoot" class="mono" readonly></div>
+      <div><label>Your local merkleRoot (paste from Python)</label><input id="localRoot" class="mono" placeholder="0x..."></div>
+      <div><label>Result</label><input id="rootResult" class="mono" readonly></div>
+    </div>
+    <div>
+      <button id="btnCompare">Compare</button>
+      <button id="btnUseForVerify">Use this version for Verify</button>
+      <span id="statusCompare" class="muted" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">ZIP → Canonicalize → Tokenize → Merkle</h3>
+    <div class="grid2">
+      <div><label>Tokenizer service URL</label><input id="svcUrl" value="http://127.0.0.1:8010"></div>
+      <div><label>Row limit per CSV</label><input id="rowLimit" type="number" min="1" step="1" value="200"></div>
+      <div><label>Upload original MIMIC demo ZIP</label><input id="e2eZip" type="file" accept=".zip"></div>
+      <div><label>Target tokenized file for proof</label><select id="e2eTarget"></select></div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button id="btnSvcInfo">Check service</button>
+      <button id="btnE2E">Run pipeline</button>
+      <button id="btnE2EProof" disabled>Build proof for target</button>
+      <button id="btnE2EToVerify" disabled>Use in Verify</button>
+      <button id="btnExport" disabled>Export debug bundle</button>
+      <span id="e2eStatus" class="muted" style="margin-left:10px;"></span>
+    </div>
+    <div class="grid2">
+      <div><label>Service info</label><input id="svcInfo" class="mono" readonly></div>
+      <div><label>Computed merkleRoot</label><input id="e2eRoot" class="mono" readonly></div>
+      <div><label>Timing</label><input id="e2eTiming" class="mono" readonly></div>
+      <div><label>Leaf hash (target)</label><input id="e2eLeaf" class="mono" readonly></div>
+      <div style="grid-column: span 2;"><label>Proof array (bytes32[], comma/space OK)</label><textarea id="e2eProof" class="mono" readonly></textarea></div>
+    </div>
+  </div>
+
+  <div id="summaryModels" class="card" style="display:none;"></div>
+  <div id="tableModels" class="card" style="display:none;">
+    <h3 style="margin-top:0">ModelRegistered</h3>
+    <div class="grid2">
+      <div><label>Filter by modelId (bytes32, optional)</label><input id="modelIdFilter" class="mono" placeholder="0x..."></div>
+      <div><label>Filter by datasetId (bytes32, optional)</label><input id="datasetIdFilter" class="mono" placeholder="0x..."></div>
+    </div>
+    <div><button id="applyModelFilter">Apply Filter</button> <span id="statusModels" class="muted" style="margin-left:10px;"></span></div>
+    <table style="margin-top:12px;">
+      <thead><tr>
+        <th>#</th><th>Block</th><th>modelId</th><th>datasetId</th><th>dsVersion</th><th>configHash</th><th>Registrant</th><th>Gas</th><th>Tx</th><th>Time (UTC)</th>
+      </tr></thead>
+      <tbody id="rowsModels"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">computeDatasetId(name)</h3>
+    <div class="grid2">
+      <div><label>Dataset name (string)</label><input id="dsName" placeholder="e.g., MIMIC-IV-demo-2.2"></div>
+      <div><label>Result</label><input id="dsIdOut" class="mono" readonly></div>
+    </div>
+    <button id="btnCompute">Compute via Contract</button>
+    <span id="statusCompute" class="muted" style="margin-left:10px;"></span>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">getModel(modelId)</h3>
+    <div class="grid2">
+      <div><label>modelId (bytes32)</label><input id="modelIdGet" class="mono" placeholder="0x..."></div>
+      <div><label>Result</label><input id="modelOut" class="mono" readonly></div>
+    </div>
+    <button id="btnGetModel">Fetch</button>
+    <span id="statusGetModel" class="muted" style="margin-left:10px;"></span>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">verifyFileHash(datasetId, version, leafHash, proof[])</h3>
+    <div class="grid2">
+      <div><label>datasetId (bytes32)</label><input id="v_ds" class="mono" placeholder="0x..."></div>
+      <div><label>version (uint256)</label><input id="v_ver" type="number" min="1" step="1" value="1"></div>
+      <div><label>leafHash (bytes32)</label><input id="v_leaf" class="mono" placeholder="0x..."></div>
+      <div><label>proof (bytes32[], comma/space separated)</label><textarea id="v_proof" class="mono" placeholder="0x..., 0x..., 0x..."></textarea></div>
+    </div>
+    <button id="btnVerify">Verify</button>
+    <span id="statusVerify" class="muted" style="margin-left:10px;"></span>
+  </div>
+
+  <!-- libs -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" crossorigin="anonymous"></script>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    /* ---------------- ABI / helpers ---------------- */
+    const ABI = [{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"indexed":false,"internalType":"uint256","name":"version","type":"uint256"},{"indexed":false,"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"indexed":false,"internalType":"string","name":"metadataCID","type":"string"},{"indexed":true,"internalType":"address","name":"registrant","type":"address"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"DatasetRegistered","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"bytes32","name":"modelId","type":"bytes32"},{"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"indexed":false,"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"indexed":false,"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"indexed":true,"internalType":"address","name":"registrant","type":"address"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"ModelRegistered","type":"event"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"authorized","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"name","type":"string"}],"name":"computeDatasetId","outputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"stateMutability":"pure","type":"function"},{"inputs":[{"internalType":"bytes32","name":"","type":"bytes32"},{"internalType":"uint256","name":"","type":"uint256"}],"name":"datasets","outputs":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"version","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"}],"name":"getDatasetVersions","outputs":[{"components":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"version","type":"uint256"}],"internalType":"struct DatasetRegistry.DatasetVersion[]","name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"}],"name":"getModel","outputs":[{"components":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"}],"internalType":"struct DatasetRegistry.ModelRecord","name":"","type":"tuple"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"name":"models","outputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"}],"name":"registerDataset","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"},{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"}],"name":"registerModel","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_addr","type":"address"},{"internalType":"bool","name":"_status","type":"bool"}],"name":"setAuthorized","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"version","type":"uint256"},{"internalType":"bytes32","name":"leafHash","type":"bytes32"},{"internalType":"bytes32[]","name":"proof","type":"bytes32[]"}],"name":"verifyFileHash","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"}];
+
+    const $ = (id) => document.getElementById(id);
+    const short = (s, pre=6, post=4) => (s && s.length > (pre+post+2) ? s.slice(0,pre+2)+"…"+s.slice(-post) : s || "");
+    const isBytes32 = (s) => /^0x[0-9a-fA-F]{64}$/.test(s);
+    const isAddress = (s) => { try { ethers.getAddress(s); return true; } catch { return false; } };
+
+    const parseRange = async (provider, raw) => {
+      const head = await provider.getBlockNumber();
+      if (!raw) return { start: Math.max(0, head - 50000), end: head };
+      const parts = raw.split("-");
+      const start = parseInt(parts[0], 10);
+      if (Number.isNaN(start)) throw new Error(`Invalid start block: "${parts[0]}"`);
+      const end = (parts.length === 1 || !parts[1] || parts[1].toLowerCase() === "latest") ? head :
+        (Number.isNaN(parseInt(parts[1], 10)) ? (()=>{throw new Error(`Invalid end block: "${parts[1]}"`)})() : parseInt(parts[1],10));
+      if (start > end) throw new Error(`Start block (${start}) > end block (${end})`);
+      return { start, end };
+    };
+    const ensureProviderContract = async () => {
+      const rpc = $("rpc").value.trim();
+      const addr = $("addr").value.trim();
+      if (!isAddress(addr)) throw new Error("Invalid contract address");
+      const provider = new ethers.JsonRpcProvider(rpc);
+      const code = await provider.getCode(addr);
+      if (!code || code === "0x") throw new Error(`No contract code at ${addr} on Sepolia`);
+      return { provider, addr, contract: new ethers.Contract(addr, ABI, provider) };
+    };
+
+    /* ---------------- On-chain views ---------------- */
+    let _dsVersions = [];
+    $("go").onclick = async () => {
+      $("go").disabled = true; $("status").textContent = "Fetching dataset versions…";
+      $("rows").innerHTML = ""; $("table").style.display="none"; $("summary").style.display="none"; $("compareCard").style.display="none";
+      try {
+        const { provider, addr, contract } = await ensureProviderContract();
+        const dsId = $("datasetId").value.trim();
+        if (!isBytes32(dsId)) throw new Error("Dataset ID must be 0x + 64 hex chars");
+        const { start, end } = await parseRange(provider, $("range").value.trim());
+
+        let versions = [];
+        try { versions = await contract.getDatasetVersions(dsId); }
+        catch {
+          const TOPIC0 = ethers.id("DatasetRegistered(bytes32,uint256,bytes32,string,address,uint256)");
+          const step = 5000;
+          for (let from = start; from <= end; from += step) {
+            const to = Math.min(from + step - 1, end);
+            const logs = await provider.getLogs({ address: addr, fromBlock: from, toBlock: to, topics: [TOPIC0, dsId] });
+            for (const log of logs) {
+              const [version, merkleRoot, metadataCID, timestamp] =
+                ethers.AbiCoder.defaultAbiCoder().decode(["uint256","bytes32","string","uint256"], log.data);
+              const registrant = ethers.getAddress("0x" + log.topics[2].slice(26));
+              versions.push({ version, merkleRoot, metadataCID, timestamp, registrant, _block: log.blockNumber, _tx: log.transactionHash });
+            }
+          }
+        }
+        if (!versions.length) { $("status").textContent = "No versions found for that dataset."; $("go").disabled=false; return; }
+
+        _dsVersions = versions.slice();
+
+        const rows = versions.map((v,i)=>({
+          idx:i+1, blockNumber:v._block || "", version:Number(v.version), merkleRoot:v.merkleRoot,
+          cid:v.metadataCID, registrant:v.registrant, gasUsed:"", txHash:v._tx||"",
+          iso: v.timestamp ? new Date(Number(v.timestamp)*1000).toISOString() : ""
+        })).sort((a,b)=> (a.blockNumber||0)-(b.blockNumber||0));
+
+        $("summary").style.display="block";
+        $("summary").innerHTML = `<div><strong>${rows.length}</strong> version(s) for dataset <code class="mono">${short(dsId,10,8)}</code>. Contract <code class="mono">${short(addr,10,8)}</code>.</div>`;
+        const tbody=$("rows"); tbody.innerHTML="";
+        for(const r of rows){
+          const tr=document.createElement("tr");
+          tr.innerHTML=`
+            <td>${r.idx}</td><td>${r.blockNumber??""}</td><td>${r.version}</td>
+            <td><code class="mono" title="${r.merkleRoot}">${short(r.merkleRoot,10,10)}</code></td>
+            <td>${r.cid?`<a href="https://ipfs.io/ipfs/${r.cid}" target="_blank">${short(r.cid,6,6)}</a>`:""}</td>
+            <td>${r.registrant?`<a href="https://sepolia.etherscan.io/address/${r.registrant}" target="_blank">${short(r.registrant)}</a>`:""}</td>
+            <td class="mono">${r.gasUsed||""}</td>
+            <td>${r.txHash?`<a href="https://sepolia.etherscan.io/tx/${r.txHash}" target="_blank">${short(r.txHash)}</a>`:""}</td>
+            <td class="mono">${r.iso}</td>`;
+          tbody.appendChild(tr);
+        }
+        $("table").style.display="block";
+        $("status").textContent = "Done.";
+
+        const sel = $("versionSelect");
+        sel.innerHTML = "";
+        const sorted = versions.slice().sort((a,b)=> Number(a.version)-Number(b.version));
+        for (const v of sorted) {
+          const opt = document.createElement("option"); opt.value = String(Number(v.version)); opt.textContent = `Version ${Number(v.version)}`; sel.appendChild(opt);
+        }
+        const updateOnchainRoot = () => {
+          const chosen = sorted.find(v => Number(v.version) === Number(sel.value));
+          $("onchainRoot").value = chosen ? String(chosen.merkleRoot) : "";
+          $("rootResult").value = ""; $("statusCompare").textContent = "";
+        };
+        sel.onchange = updateOnchainRoot;
+        sel.value = sel.options[sel.options.length - 1]?.value || "";
+        updateOnchainRoot();
+        $("compareCard").style.display = "block";
+      } catch(e){ console.error(e); $("status").textContent = `Error: ${e?.message||e}`; }
+      finally { $("go").disabled=false; }
+    };
+
+    $("btnCompare").onclick = () => {
+      const local = $("localRoot").value.trim().toLowerCase();
+      const onchain = $("onchainRoot").value.trim().toLowerCase();
+      if (!/^0x[0-9a-f]{64}$/.test(local)) { $("statusCompare").textContent = "Enter a valid 0x + 64-hex local merkleRoot."; $("rootResult").value = ""; return; }
+      const match = local === onchain;
+      $("rootResult").value = match ? "✅ MATCH" : "❌ MISMATCH";
+      $("statusCompare").textContent = match ? "Roots match." : "Roots differ.";
+    };
+    $("btnUseForVerify").onclick = () => {
+      $("v_ds").value = $("datasetId").value.trim();
+      $("v_ver").value = $("versionSelect").value;
+      $("statusCompare").textContent = "Copied datasetId + version into Verify section.";
+    };
+
+    async function fetchModels() {
+      $("statusModels").textContent = "Fetching model events…";
+      $("rowsModels").innerHTML = ""; $("tableModels").style.display="none"; $("summaryModels").style.display="none";
+      try {
+        const rpc = $("rpc").value.trim(), addr = $("addr").value.trim();
+        if (!isAddress(addr)) throw new Error("Invalid contract address");
+        const provider = new ethers.JsonRpcProvider(rpc);
+        const code = await provider.getCode(addr);
+        if (!code || code === "0x") throw new Error(`No contract code at ${addr} on Sepolia`);
+        const { start, end } = await parseRange(provider, $("range").value.trim());
+        const modelId = $("modelIdFilter").value.trim(), dsIdF = $("datasetIdFilter").value.trim();
+        const topics = [ ethers.id("ModelRegistered(bytes32,bytes32,uint256,bytes32,address,uint256)") ];
+        topics[1] = isBytes32(modelId) ? modelId : null;
+        topics[2] = isBytes32(dsIdF) ? dsIdF : null;
+
+        let logsAll = [], step = 5000;
+        for (let from = start; from <= end; from += step) {
+          const to = Math.min(from + step - 1, end);
+          const logs = await provider.getLogs({ address: addr, fromBlock: from, toBlock: to, topics });
+          logsAll.push(...logs);
+        }
+        if (!logsAll.length) { $("statusModels").textContent = "No ModelRegistered events in range/filter."; return; }
+
+        const rows = [];
+        for (let i=0;i<logsAll.length;i++){
+          const log = logsAll[i];
+          const [datasetVersion, trainingConfigHash, timestamp] = ethers.AbiCoder.defaultAbiCoder().decode(["uint256","bytes32","uint256"], log.data);
+          const modelIdX = log.topics[1], datasetIdX = log.topics[2], registrant = ethers.getAddress("0x" + log.topics[3].slice(26));
+          let gasUsed = "", blockNumber = log.blockNumber, ts = Number(timestamp);
+          try { const rc = await provider.getTransactionReceipt(log.transactionHash); gasUsed = rc?.gasUsed?.toString?.()||""; } catch {}
+          rows.push({ idx:i+1, blockNumber, modelId:modelIdX, datasetId:datasetIdX, datasetVersion:Number(datasetVersion), trainingConfigHash, registrant, gasUsed, txHash:log.transactionHash, iso: ts ? new Date(ts*1000).toISOString() : "" });
+        }
+        rows.sort((a,b)=> (a.blockNumber||0)-(b.blockNumber||0));
+        $("summaryModels").style.display="block";
+        $("summaryModels").innerHTML = `<div><strong>${rows.length}</strong> ModelRegistered event(s).</div>`;
+        const tbody=$("rowsModels"); tbody.innerHTML="";
+        for(const r of rows){
+          const tr=document.createElement("tr");
+          tr.innerHTML=`
+            <td>${r.idx}</td><td>${r.blockNumber}</td>
+            <td><code class="mono" title="${r.modelId}">${short(r.modelId,10,10)}</code></td>
+            <td><code class="mono" title="${r.datasetId}">${short(r.datasetId,10,10)}</code></td>
+            <td>${r.datasetVersion}</td>
+            <td><code class="mono" title="${r.trainingConfigHash}">${short(r.trainingConfigHash,10,10)}</code></td>
+            <td><a href="https://sepolia.etherscan.io/address/${r.registrant}" target="_blank">${short(r.registrant)}</a></td>
+            <td class="mono">${r.gasUsed}</td>
+            <td><a href="https://sepolia.etherscan.io/tx/${r.txHash}" target="_blank">${short(r.txHash)}</a></td>
+            <td class="mono">${r.iso}</td>`;
+          tbody.appendChild(tr);
+        }
+        $("tableModels").style.display="block"; $("statusModels").textContent = "Done.";
+      } catch(e){ console.error(e); $("statusModels").textContent = `Error: ${e?.message||e}`; }
+    }
+    $("goModels").onclick = fetchModels;
+
+    $("btnCompute").onclick = async () => {
+      $("btnCompute").disabled = true; $("statusCompute").textContent = "Computing…";
+      try {
+        const { contract } = await ensureProviderContract();
+        const name = $("dsName").value; if (!name) throw new Error("Enter a dataset name");
+        $("dsIdOut").value = await contract.computeDatasetId(name);
+        $("statusCompute").textContent = "Done.";
+      } catch(e){ console.error(e); $("statusCompute").textContent = `Error: ${e?.message||e}`; }
+      finally { $("btnCompute").disabled=false; }
+    };
+    $("btnGetModel").onclick = async () => {
+      $("btnGetModel").disabled = true; $("statusGetModel").textContent = "Fetching…";
+      try {
+        const { contract } = await ensureProviderContract();
+        const mid = $("modelIdGet").value.trim();
+        if (!isBytes32(mid)) throw new Error("modelId must be bytes32");
+        const rec = await contract.getModel(mid);
+        $("modelOut").value = JSON.stringify({
+          datasetId: rec.datasetId, datasetVersion: Number(rec.datasetVersion),
+          trainingConfigHash: rec.trainingConfigHash, timestamp: Number(rec.timestamp),
+          registrant: rec.registrant
+        }, null, 2);
+        $("statusGetModel").textContent = "Done.";
+      } catch(e){ console.error(e); $("statusGetModel").textContent = `Error: ${e?.message||e}`; }
+      finally { $("btnGetModel").disabled=false; }
+    };
+    $("btnVerify").onclick = async () => {
+      $("btnVerify").disabled = true; $("statusVerify").textContent = "Verifying…";
+      try {
+        const { contract } = await ensureProviderContract();
+        const ds = $("v_ds").value.trim(), ver = parseInt($("v_ver").value,10), leaf = $("v_leaf").value.trim();
+        const proof = $("v_proof").value.trim() ? $("v_proof").value.trim().split(/[\s,]+/).filter(Boolean) : [];
+        if (!isBytes32(ds)) throw new Error("datasetId must be bytes32");
+        if (!Number.isInteger(ver) || ver < 1) throw new Error("version must be a positive integer");
+        if (!isBytes32(leaf)) throw new Error("leafHash must be bytes32");
+        for (const p of proof) if (!isBytes32(p)) throw new Error(`Invalid proof element: ${p}`);
+        const ok = await contract.verifyFileHash(ds, ver, leaf, proof);
+        $("statusVerify").textContent = ok ? "✅ Proof is valid (included)" : "❌ Not included / bad proof";
+      } catch(e){ console.error(e); $("statusVerify").textContent = `Error: ${e?.message||e}`; }
+      finally { $("btnVerify").disabled=false; }
+    };
+
+    /* -------- ZIP → Canonicalize → Tokenize (Python svc) → Merkle -------- */
+    const keccak = ethers.keccak256, toBytes = ethers.getBytes;
+    const concat64 = (a,b) => { const out = new Uint8Array(64); out.set(a,0); out.set(b,32); return out; };
+
+    function pyStringRepr(s){ return "'" + String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/\n/g,"\\n") + "'"; }
+    const asPyValue = (v) => (v === '' || v == null) ? 'nan' : pyStringRepr(v);
+    function pyDictRepr(header, rowObj){ return `{${header.map(k => `${pyStringRepr(k)}: ${asPyValue(rowObj[k])}`).join(', ')}}`; }
+
+    function compareLikePandas(a, b, header){
+      for (const c of header){
+        const av = a[c] ?? '', bv = b[c] ?? '';
+        const aMiss = (av === ''), bMiss = (bv === '');
+        if (aMiss && bMiss) continue;
+        if (aMiss && !bMiss) return 1;
+        if (!aMiss && bMiss) return -1;
+        if (av < bv) return -1; if (av > bv) return 1;
+      }
+      return 0;
+    }
+
+    function canonicalizeCsv(csvText){
+      const parsed = Papa.parse(csvText, { header:true, dynamicTyping:false, skipEmptyLines:'greedy' });
+      const rows0 = parsed.data || [];
+      const header = [...new Set(parsed.meta.fields || Object.keys(rows0[0] || {}))].sort();
+      const rows = rows0.map(r => { const o = {}; for (const c of header) o[c] = (r && r[c] != null ? String(r[c]) : ''); return o; });
+      rows.sort((a,b)=> compareLikePandas(a,b,header));
+      return { header, rows };
+    }
+
+    function pyJsonLine(rec){
+      return `{"prompt": ${JSON.stringify(rec.prompt)}, "response": ${JSON.stringify(rec.response)}, "input_ids": [${rec.input_ids.join(', ')}], "attention_mask": [${rec.attention_mask.join(', ')}]}\n`;
+    }
+    function merkleRoot(leaves){
+      if (!leaves.length) return null;
+      let level = leaves.slice();
+      while (level.length > 1) {
+        if (level.length % 2 === 1) level.push(level[level.length-1]);
+        const next = [];
+        for (let i=0;i<level.length;i+=2) next.push(toBytes(keccak(concat64(level[i], level[i+1]))));
+        level = next;
+      }
+      return ethers.hexlify(level[0]);
+    }
+    function merkleProof(leaves, idx){
+      let level = leaves.slice(), i = idx, proof = [];
+      while (level.length > 1) {
+        if (level.length % 2 === 1) level.push(level[level.length-1]);
+        const next=[];
+        for (let k=0;k<level.length;k+=2){
+          const L=level[k], R=level[k+1];
+          if (k===i || k+1===i){ proof.push(ethers.hexlify(k===i?R:L)); i = next.length; }
+          next.push(toBytes(keccak(concat64(L,R))));
+        }
+        level = next;
+      }
+      return proof;
+    }
+
+    async function svcFetch(path, body){
+      const base = $("svcUrl").value.trim().replace(/\/+$/,'');
+      const r = await fetch(base + path, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+      return r.json();
+    }
+
+    $("btnSvcInfo").onclick = async () => {
+      try{
+        const base = $("svcUrl").value.trim().replace(/\/+$/,'');
+        const r = await fetch(base + "/version", {cache:"no-store"});
+        if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+        const j = await r.json();
+        $("svcInfo").value = `svc=${j.service} hf=${j.transformers} tok=${j.tokenizers} src=${j.source} md5=${j.local_tokenizer_md5||'n/a'}`;
+        $("e2eStatus").textContent = "Service OK.";
+      }catch(e){ console.error(e); $("svcInfo").value=""; $("e2eStatus").textContent=`Service error: ${e.message||e}`; }
+    };
+
+    let E2E_TOKENIZED=[], E2E_NAMES=[], E2E_DEBUG=[];
+    async function runPipelineFromZip(file){
+      const rowLimit = parseInt($("rowLimit").value,10) || 200;
+      const status = $("e2eStatus");
+      const t0 = performance.now();
+
+      status.textContent = "Loading ZIP…";
+      const zip = await JSZip.loadAsync(file);
+
+      const entries = Object.values(zip.files)
+        .filter(f => !f.dir && (f.name.toLowerCase().endsWith(".csv") || f.name.toLowerCase().endsWith(".csv.gz")))
+        .filter(f => !/demo_subject_id/i.test(f.name))
+        .sort((a,b)=> a.name.localeCompare(b.name));
+      if (!entries.length) throw new Error("No CSV/CSV.GZ files found in ZIP.");
+
+      E2E_TOKENIZED=[]; E2E_NAMES=[]; E2E_DEBUG=[];
+      for (let n=0;n<entries.length;n++){
+        const ent = entries[n];
+        status.textContent = `Processing ${n+1}/${entries.length}: ${ent.name}`;
+        const csvBytes = ent.name.toLowerCase().endsWith(".csv.gz") ? pako.ungzip(await ent.async("uint8array")) : await ent.async("uint8array");
+        const csvText = new TextDecoder("utf-8").decode(csvBytes);
+
+        const canon = canonicalizeCsv(csvText);
+        if (!canon.rows.length) continue;
+
+        const N = Math.min(rowLimit, canon.rows.length);
+        const filename = ent.name.split("/").pop().replace(/\.gz$/,"");
+        const prompts = new Array(N), responses = new Array(N);
+        for (let r=0;r<N;r++){
+          const obj = {}; for (const c of canon.header) obj[c] = canon.rows[r][c];
+          const rowStr = pyDictRepr(canon.header, obj);
+          prompts[r]  = `You are a clinical assistant. Given the following record from ${filename}, provide a short summary:\n${rowStr}`;
+          responses[r] = "Summary: [Your summary here]";
+        }
+
+        // Tokenize via Python service
+        const enc = await svcFetch("/tokenize_bulk", {prompts, responses, truncation:true, max_length:512});
+
+        // Build JSONL (exact json.dumps spacing)
+        let jsonl = '';
+        for (let r=0;r<N;r++){
+          jsonl += pyJsonLine({ prompt:prompts[r], response:responses[r], input_ids: enc.input_ids[r], attention_mask: enc.attention_mask[r] });
+        }
+
+        const leafHex = keccak(new TextEncoder().encode(jsonl));
+        const outName = `tokenized_${filename.replace(/\.csv$/i,'')}.jsonl`;
+        E2E_TOKENIZED.push({ name: outName, bytes32: ethers.getBytes(leafHex), leafHex, jsonlLen: jsonl.length, rows:N });
+        E2E_NAMES.push(outName);
+
+        E2E_DEBUG.push({ filename, header: canon.header, rows_used: N, leaf_keccak256: leafHex, first_line_sample: jsonl.slice(0, 220) });
+      }
+
+      E2E_TOKENIZED.sort((a,b)=> a.name.localeCompare(b.name));
+      E2E_NAMES = E2E_TOKENIZED.map(x=>x.name);
+
+      const sel = $("e2eTarget"); sel.innerHTML = "";
+      for (const n of E2E_NAMES){ const o=document.createElement("option"); o.value=o.textContent=n; sel.appendChild(o); }
+
+      const rootHex = merkleRoot(E2E_TOKENIZED.map(x=>x.bytes32));
+      const t1 = performance.now();
+      $("e2eRoot").value = rootHex || "";
+      $("e2eTiming").value = `files: ${E2E_NAMES.length} | total ${(t1-t0).toFixed(1)} ms`;
+      $("e2eStatus").textContent = "Done. Choose a target and build its proof.";
+      $("btnE2EProof").disabled = !E2E_NAMES.length;
+      $("btnE2EToVerify").disabled = true;
+      $("btnExport").disabled = !E2E_NAMES.length;
+    }
+
+    $("btnE2E").onclick = async () => {
+      try {
+        const f = $("e2eZip").files?.[0];
+        if (!f) { $("e2eStatus").textContent = "Pick the original MIMIC demo ZIP first."; return; }
+        $("btnE2E").disabled = true; $("e2eStatus").textContent = "Running pipeline… (this can take a bit)";
+        await runPipelineFromZip(f);
+      } catch(e){ console.error(e); $("e2eStatus").textContent = `Error: ${e?.message||e}`; }
+      finally { $("btnE2E").disabled = false; }
+    };
+    $("btnE2EProof").onclick = () => {
+      try {
+        if (!E2E_NAMES.length) { $("e2eStatus").textContent = "Run pipeline first."; return; }
+        const target = $("e2eTarget").value;
+        const idx = E2E_NAMES.indexOf(target);
+        const proof = merkleProof(E2E_TOKENIZED.map(x=>x.bytes32), idx);
+        $("e2eLeaf").value = E2E_TOKENIZED[idx].leafHex;
+        $("e2eProof").value = proof.join(", ");
+        $("btnE2EToVerify").disabled = false;
+        $("e2eStatus").textContent = "Proof built.";
+      } catch(e){ console.error(e); $("e2eStatus").textContent = `Error: ${e?.message||e}`; }
+    };
+    $("btnE2EToVerify").onclick = () => {
+      $("v_ds").value = $("datasetId").value.trim();
+      const verSel = $("versionSelect"); if (verSel && verSel.value) $("v_ver").value = verSel.value;
+      $("v_leaf").value = $("e2eLeaf").value.trim();
+      $("v_proof").value = $("e2eProof").value.trim();
+      $("e2eStatus").textContent = "Copied leaf/proof to Verify section.";
+    };
+    $("btnExport").onclick = () => {
+      const blob = new Blob([JSON.stringify({
+        service_url: $("svcUrl").value.trim(),
+        merkle_root: $("e2eRoot").value.trim(),
+        files: E2E_TOKENIZED,
+        debug: E2E_DEBUG
+      }, null, 2)], {type: "application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "debug_bundle.json";
+      a.click(); URL.revokeObjectURL(url);
+    };
+    $("e2eZip").addEventListener("change", () => {
+      $("btnE2EProof").disabled = true; $("btnE2EToVerify").disabled = true; $("btnExport").disabled = true;
+      $("e2eRoot").value=""; $("e2eLeaf").value=""; $("e2eProof").value=""; $("e2eTiming").value=""; $("e2eStatus").textContent="";
+    });
+  });
+  </script>
+</body>
+</html>
