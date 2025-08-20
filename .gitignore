@@ -25,3 +25,5 @@ inference_log.jsonl
 .DS_Store
 Thumbs.db
 .vscode/
+
+DatasetVerification/
