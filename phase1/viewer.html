@@ -5,9 +5,8 @@
   <title>Sepolia On-chain Viewer</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    /* Comfortable, screenshot-friendly layout */
     :root{
-      --page-width: 1040px;   /* <— bump this to 1160px if you want even wider */
+      --page-width: 1040px;
       --gap: 14px;
       --radius: 14px;
       --border:#e5e7eb; --muted:#6b7280; --ink:#111827;
@@ -48,7 +47,6 @@
     textarea{ min-height:96px; resize:vertical; }
     .mono, code{ font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
 
-    /* Two-column layout that doesn’t overlap and wraps nicely */
     .grid2{
       display:grid;
       gap:var(--gap);
@@ -58,41 +56,24 @@
       .grid2{ grid-template-columns: 1fr 1fr; }
     }
 
-    /* Horizontal rows for button groups etc. */
     .row{
       display:flex; gap:var(--gap); flex-wrap:wrap; align-items:center;
       margin-top:8px;
     }
-    .row > *{ flex: 1 1 220px; }   /* keeps things from getting too skinny */
+    .row > *{ flex: 1 1 220px; }
 
-    /* Tables: keep them neat and scrollable if needed */
     .table-wrap{ overflow-x:auto; }
     table{ border-collapse:collapse; width:100%; min-width:680px; font-size:.94rem; }
     th, td{ border-bottom:1px solid var(--border); padding:10px; text-align:left; vertical-align:top; }
-    th{ font-weight:600; color:var(--ink); background:#f9fafb; }
+    th{ font-weight:600; color:#000; background:#f9fafb; }
     code{ background:#f3f4f6; padding:2px 6px; border-radius:6px; word-break:break-all; }
 
     button{ background:#111827; color:#fff; cursor:pointer; border:1px solid #111827; }
     button:disabled{ opacity:.55; cursor:not-allowed; }
-
     .muted{ color:var(--muted); }
-    /* More breathing room around the black buttons */
-    button{
-      padding: 12px 16px;          /* slightly taller */
-      margin: 8px 0;               /* space above & below every button */
-      border-radius: 12px;         /* a touch rounder */
-    }
 
-    /* Extra gap when buttons are stacked one under another */
-    button + button{
-      margin-top: 12px;            /* gap between consecutive buttons */
-    }
-
-    /* (Optional) only for Compare card buttons */
-    #btnCompare, #btnUseForVerify{
-      margin-top: 10px;
-      margin-bottom: 10px;
-    }
+    button{ padding: 12px 16px; margin: 8px 0; border-radius: 12px; }
+    button + button{ margin-top: 12px; }
   </style>
 </head>
 <body>
@@ -105,15 +86,18 @@
 
   <div class="card">
     <div class="grid2">
-      <div><label>RPC URL</label><input id="rpc" value="https://sepolia.infura.io/v3/c2b7a40258a44725896e33d57383c026"></div>
-      <div><label>Contract Address</label><input id="addr" value="0x877291c5FdbFa77f2961971dE560eAb1B25E3A36"></div>
-      <div><label>Dataset ID (bytes32)</label><input id="datasetId" class="mono" value="0x45456e1833a4ba5346b25a2c2e8ead1b1554477e5372bfc4274222c0ac425868"></div>
-      <div><label>Block range (start–end or “latest”)</label><input id="range" value="8952289"></div>
+      <div><label>RPC URL</label><input id="rpc" value="https://<YOUR_RPC_URL>"></div>
+      <div><label>Contract Address</label><input id="addr" value="0xYourContractAddress"></div>
+      <div><label>Dataset ID (bytes32)</label><input id="datasetId" class="mono" value="0xYourDatasetId"></div>
+      <div><label>Block range (start–end or “latest”)</label><input id="range" value="latest"></div>
     </div>
-    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+    <div class="row">
       <button id="go">Fetch DatasetRegistered</button>
+      <span id="status" class="muted"></span>
+    </div>
+    <div class="row">
       <button id="goModels">Fetch ModelRegistered</button>
-      <span id="status" class="muted" style="margin-left:10px;"></span>
+      <span id="statusModels" class="muted"></span>
     </div>
   </div>
 
@@ -128,6 +112,18 @@
     </table>
   </div>
 
+  <div id="summaryModels" class="card" style="display:none;"></div>
+  <div id="tableModels" class="card" style="display:none;">
+    <h3 style="margin:0">ModelRegistered</h3>
+    <table style="margin-top:12px;">
+      <thead><tr>
+        <th>#</th><th>Block</th><th>modelId</th><th>datasetId</th><th>dsVersion</th>
+        <th>configHash</th><th>Registrant</th><th>Gas</th><th>Tx</th><th>Time (UTC)</th>
+      </tr></thead>
+      <tbody id="rowsModels"></tbody>
+    </table>
+  </div>  
+
   <div id="compareCard" class="card" style="display:none;">
     <h3 style="margin-top:0">Merkle Root Comparison</h3>
     <div class="grid2">
@@ -136,23 +132,14 @@
       <div><label>Your local merkleRoot (paste from Colab)</label><input id="localRoot" class="mono" placeholder="0x..."></div>
       <div><label>Result</label><input id="rootResult" class="mono" readonly></div>
     </div>
-    <div>
+    <div class="row">
       <button id="btnCompare">Compare</button>
       <button id="btnUseForVerify">Use this version for Verify</button>
-      <span id="statusCompare" class="muted" style="margin-left:10px;"></span>
+      <span id="statusCompare" class="muted"></span>
     </div>
   </div>
 
-  <div id="summaryModels" class="card" style="display:none;"></div>
-  <div id="tableModels" class="card" style="display:none;">
-    <h3 style="margin-top:0">ModelRegistered</h3>
-    <table style="margin-top:12px;">
-      <thead><tr>
-        <th>#</th><th>Block</th><th>modelId</th><th>datasetId</th><th>dsVersion</th><th>configHash</th><th>Registrant</th><th>Gas</th><th>Tx</th><th>Time (UTC)</th>
-      </tr></thead>
-      <tbody id="rowsModels"></tbody>
-    </table>
-  </div>
+
 
   <div class="card">
     <h3 style="margin-top:0">computeDatasetId(name)</h3>
@@ -160,8 +147,10 @@
       <div><label>Dataset name (string)</label><input id="dsName" placeholder="e.g., MIMIC-IV-demo-2.2"></div>
       <div><label>Result</label><input id="dsIdOut" class="mono" readonly></div>
     </div>
-    <button id="btnCompute">Compute via Contract</button>
-    <span id="statusCompute" class="muted" style="margin-left:10px;"></span>
+    <div class="row">
+      <button id="btnCompute">Compute via Contract</button>
+      <span id="statusCompute" class="muted"></span>
+    </div>
   </div>
 
   <div class="card">
@@ -170,8 +159,10 @@
       <div><label>modelId (bytes32)</label><input id="modelIdGet" class="mono" placeholder="0x..."></div>
       <div><label>Result</label><input id="modelOut" class="mono" readonly></div>
     </div>
-    <button id="btnGetModel">Fetch</button>
-    <span id="statusGetModel" class="muted" style="margin-left:10px;"></span>
+    <div class="row">
+      <button id="btnGetModel">Fetch</button>
+      <span id="statusGetModel" class="muted"></span>
+    </div>
   </div>
 
   <div class="card">
@@ -183,7 +174,6 @@
       <div><label>proof (bytes32[], comma/space separated)</label><textarea id="v_proof" class="mono" placeholder="0x..., 0x..., 0x..."></textarea></div>
     </div>
 
-    <!-- NEW: load verify_bundle.json / manifest.json to auto-fill -->
     <div class="grid2" style="margin-top:8px;">
       <div>
         <label>Or load verify_bundle.json (from Colab)</label>
@@ -194,14 +184,43 @@
       </div>
     </div>
 
-    <button id="btnVerify">Verify</button>
-    <span id="statusVerify" class="muted" style="margin-left:10px;"></span>
+    <div class="row">
+      <button id="btnVerify">Verify</button>
+      <span id="statusVerify" class="muted"></span>
+    </div>
   </div>
+
+  <div class="card" id="merkleExplorer">
+    <h3 style="margin-top:0">Merkle Explorer (truncated)</h3>
+    <p class="muted">Load <code>merkle_hashes.txt</code> to visualize the tree used in Phase 1 (sorted-pair; duplicate last when odd). Hashes are truncated for readability.</p>
+    <div class="grid2">
+      <div>
+        <label>Load merkle_hashes.txt</label>
+        <input id="mhFile" type="file" accept=".txt,text/plain">
+      </div>
+      <div>
+        <label>Or paste contents</label>
+        <textarea id="mhPaste" class="mono" placeholder="Paste the merkle_hashes.txt content here…" style="min-height:96px"></textarea>
+      </div>
+    </div>
+    <div class="row">
+      <button id="btnRenderTree">Render Merkle Tree</button>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="chkShowAll"> Show all leaves
+      </label>
+      <span id="mhStatus" class="muted"></span>
+    </div>
+    <div id="mhRoot" class="mono" style="margin-top:8px"></div>
+    <div id="mhTree" style="margin-top:10px"></div>
+  </div>
+
 
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const ABI = [{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"indexed":false,"internalType":"uint256","name":"version","type":"uint256"},{"indexed":false,"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"indexed":false,"internalType":"string","name":"metadataCID","type":"string"},{"indexed":true,"internalType":"address","name":"registrant","type":"address"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"DatasetRegistered","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"bytes32","name":"modelId","type":"bytes32"},{"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"indexed":false,"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"indexed":false,"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"indexed":true,"internalType":"address","name":"registrant","type":"address"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"ModelRegistered","type":"event"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"authorized","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"name","type":"string"}],"name":"computeDatasetId","outputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"stateMutability":"pure","type":"function"},{"inputs":[{"internalType":"bytes32","name":"","type":"bytes32"},{"internalType":"uint256","name":"","type":"uint256"}],"name":"datasets","outputs":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"version","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"}],"name":"getDatasetVersions","outputs":[{"components":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"version","type":"uint256"}],"internalType":"struct DatasetRegistry.DatasetVersion[]","name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"}],"name":"getModel","outputs":[{"components":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"}],"internalType":"struct DatasetRegistry.ModelRecord","name":"","type":"tuple"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"name":"models","outputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"}],"name":"registerDataset","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"},{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"}],"name":"registerModel","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_addr","type":"address"},{"internalType":"bool","name":"_status","type":"bool"}],"name":"setAuthorized","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"version","type":"uint256"},{"internalType":"bytes32","name":"leafHash","type":"bytes32"},{"internalType":"bytes32[]","name":"proof","type":"bytes32[]"}],"name":"verifyFileHash","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"}];
+    const ABI = [
+    {"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"addr","type":"address"},{"indexed":false,"internalType":"bool","name":"status","type":"bool"}],"name":"AuthorizationSet","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"indexed":false,"internalType":"uint256","name":"version","type":"uint256"},{"indexed":false,"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"indexed":false,"internalType":"string","name":"metadataCID","type":"string"},{"indexed":true,"internalType":"address","name":"registrant","type":"address"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"DatasetRegistered","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"bytes32","name":"modelId","type":"bytes32"},{"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"indexed":false,"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"indexed":false,"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"indexed":true,"internalType":"address","name":"registrant","type":"address"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"ModelRegistered","type":"event"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"authorized","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"name","type":"string"}],"name":"computeDatasetId","outputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"stateMutability":"pure","type":"function"},{"inputs":[{"internalType":"bytes32","name":"","type":"bytes32"},{"internalType":"uint256","name":"","type":"uint256"}],"name":"datasets","outputs":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"version","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"version","type":"uint256"}],"name":"getDatasetVersion","outputs":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"versionNum","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"}],"name":"getDatasetVersions","outputs":[{"components":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"version","type":"uint256"}],"internalType":"struct DatasetRegistry.DatasetVersion[]","name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"}],"name":"getModel","outputs":[{"components":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"}],"internalType":"struct DatasetRegistry.ModelRecord","name":"","type":"tuple"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"}],"name":"latestDatasetVersion","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"name":"models","outputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"}],"name":"registerDataset","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"},{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"}],"name":"registerModel","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"},{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"address","name":"ownerEOA","type":"address"}],"name":"registerModelOperator","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_addr","type":"address"},{"internalType":"bool","name":"_status","type":"bool"}],"name":"setAuthorized","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"version","type":"uint256"},{"internalType":"bytes32","name":"leafHash","type":"bytes32"},{"internalType":"bytes32[]","name":"proof","type":"bytes32[]"}],"name":"verifyFileHash","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"}
+    ];
 
     const $ = (id) => document.getElementById(id);
     const short = (s, pre=6, post=4) => (s && s.length > (pre+post+2) ? s.slice(0,pre+2)+"…"+s.slice(-post) : s || "");
@@ -219,6 +238,7 @@
       if (start > end) throw new Error(`Start block (${start}) > end block (${end})`);
       return { start, end };
     };
+
     const ensureProviderContract = async () => {
       const rpc = $("rpc").value.trim();
       const addr = $("addr").value.trim();
@@ -229,7 +249,7 @@
       return { provider, addr, contract: new ethers.Contract(addr, ABI, provider) };
     };
 
-    // ---- NEW: Always-scan DatasetRegistered so we have block, tx, and gas ----
+    // --- Scan DatasetRegistered logs so we get block/tx/gas ---
     async function scanDatasetEvents(provider, addr, dsId, start, end) {
       const TOPIC0 = ethers.id("DatasetRegistered(bytes32,uint256,bytes32,string,address,uint256)");
       const step = 5000;
@@ -246,10 +266,7 @@
             const rc = await provider.getTransactionReceipt(log.transactionHash);
             gasUsed = rc?.gasUsed?.toString?.() || "";
           } catch {}
-          out.push({
-            version, merkleRoot, metadataCID, timestamp, registrant,
-            _block: log.blockNumber, _tx: log.transactionHash, gasUsed
-          });
+          out.push({ version, merkleRoot, metadataCID, timestamp, registrant, _block: log.blockNumber, _tx: log.transactionHash, gasUsed });
         }
       }
       return out;
@@ -265,12 +282,10 @@
         if (!isBytes32(dsId)) throw new Error("Dataset ID must be 0x + 64 hex chars");
         const { start, end } = await parseRange(provider, $("range").value.trim());
 
-        // NEW: always use the scanner so we get tx + gas
         const versions = await scanDatasetEvents(provider, addr, dsId, start, end);
         if (!versions.length) { $("status").textContent = "No versions found for that dataset."; $("go").disabled=false; return; }
 
         _dsVersions = versions.slice();
-
         const rows = versions.map((v,i)=>({
           idx:i+1, blockNumber:v._block || "", version:Number(v.version), merkleRoot:v.merkleRoot,
           cid:v.metadataCID, registrant:v.registrant, gasUsed:v.gasUsed||"", txHash:v._tx||"",
@@ -328,45 +343,111 @@
       $("statusCompare").textContent = "Copied datasetId + version into Verify section.";
     };
 
-    async function fetchModels() {
-      $("statusModels").textContent = "Fetching model events…";
-      $("rowsModels").innerHTML = ""; $("tableModels").style.display="none"; $("summaryModels").style.display="none";
-      try {
-        const rpc = $("rpc").value.trim(), addr = $("addr").value.trim();
-        if (!isAddress(addr)) throw new Error("Invalid contract address");
-        const provider = new ethers.JsonRpcProvider(rpc);
-        const code = await provider.getCode(addr);
-        if (!code || code === "0x") throw new Error(`No contract code at ${addr} on Sepolia`);
-        const { start, end } = await parseRange(provider, $("range").value.trim());
-        const modelId = $("modelIdFilter")?.value?.trim?.() ?? "", dsIdF = $("datasetIdFilter")?.value?.trim?.() ?? "";
-        const topics = [ ethers.id("ModelRegistered(bytes32,bytes32,uint256,bytes32,address,uint256)") ];
-        topics[1] = isBytes32(modelId) ? modelId : null;
-        topics[2] = isBytes32(dsIdF) ? dsIdF : null;
+    // ----- Robust ModelRegistered scanner (keeps your block-start & full-width table) -----
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    async function withRetry(fn, { tries=6, base=700 } = {}) {
+      let last;
+      for (let i=0;i<tries;i++){
+        try { return await fn(); }
+        catch (e){
+          last = e;
+          const msg = (e?.message||"") + " " + JSON.stringify(e?.info||{});
+          if (msg.includes("Too Many Requests") || msg.includes("-32005") || msg.includes("timeout") || msg.includes("SERVER_ERROR")) {
+            await sleep(base * Math.pow(1.6, i));
+            continue;
+          }
+          throw e;
+        }
+      }
+      throw last;
+    }
 
-        let logsAll = [], step = 5000;
+    async function fetchModels() {
+      const statusEl = $("statusModels") || $("status");
+      const tbody  = $("rowsModels");
+      const table  = $("tableModels");
+      const sum    = $("summaryModels");
+
+      statusEl.textContent = "Fetching model events…";
+      tbody.innerHTML = ""; table.style.display="none"; sum.style.display="none";
+
+      try {
+        const { provider, addr } = await ensureProviderContract();
+        const { start, end } = await parseRange(provider, $("range").value.trim());
+
+        const TOPIC0 = ethers.id("ModelRegistered(bytes32,bytes32,uint256,bytes32,address,uint256)");
+        const dsMaybe = $("datasetId").value.trim();
+        const useFilter = isBytes32(dsMaybe);
+        const topics = useFilter ? [TOPIC0, null, dsMaybe, null] : [TOPIC0];
+
+        const logsAll = [];
+        const step = 4500;
         for (let from = start; from <= end; from += step) {
           const to = Math.min(from + step - 1, end);
-          const logs = await provider.getLogs({ address: addr, fromBlock: from, toBlock: to, topics });
-          logsAll.push(...logs);
+          const chunk = await withRetry(() =>
+            provider.getLogs({ address: addr, fromBlock: from, toBlock: to, topics })
+          );
+          logsAll.push(...chunk);
+          await sleep(500);
         }
-        if (!logsAll.length) { $("statusModels").textContent = "No ModelRegistered events in range/filter."; return; }
+
+        // Fallback: if filtered returned nothing, retry without filter
+        if (!logsAll.length && useFilter) {
+          const logsUnfiltered = [];
+          for (let from = start; from <= end; from += step) {
+            const to = Math.min(from + step - 1, end);
+            const chunk = await withRetry(() =>
+              provider.getLogs({ address: addr, fromBlock: from, toBlock: to, topics: [TOPIC0] })
+            );
+            logsUnfiltered.push(...chunk);
+            await sleep(500);
+          }
+          logsAll.push(...logsUnfiltered);
+        }
+
+        if (!logsAll.length) {
+          statusEl.textContent = "No ModelRegistered events in range.";
+          return;
+        }
 
         const rows = [];
         for (let i=0;i<logsAll.length;i++){
           const log = logsAll[i];
-          const [datasetVersion, trainingConfigHash, timestamp] = ethers.AbiCoder.defaultAbiCoder().decode(["uint256","bytes32","uint256"], log.data);
-          const modelIdX = log.topics[1], datasetIdX = log.topics[2], registrant = ethers.getAddress("0x" + log.topics[3].slice(26));
-          let gasUsed = "", blockNumber = log.blockNumber, ts = Number(timestamp);
-          try { const rc = await provider.getTransactionReceipt(log.transactionHash); gasUsed = rc?.gasUsed?.toString?.()||""; } catch {}
-          rows.push({ idx:i+1, blockNumber, modelId:modelIdX, datasetId:datasetIdX, datasetVersion:Number(datasetVersion), trainingConfigHash, registrant, gasUsed, txHash:log.transactionHash, iso: ts ? new Date(ts*1000).toISOString() : "" });
+          const [datasetVersion, trainingConfigHash, timestamp] =
+            ethers.AbiCoder.defaultAbiCoder().decode(["uint256","bytes32","uint256"], log.data);
+          const modelIdX   = log.topics[1];
+          const datasetIdX = log.topics[2];
+          const registrant = ethers.getAddress("0x" + log.topics[3].slice(26));
+
+          let gasUsed = "";
+          try {
+            const rc = await withRetry(() => provider.getTransactionReceipt(log.transactionHash));
+            gasUsed = rc?.gasUsed?.toString?.()||"";
+          } catch {}
+
+          rows.push({
+            idx:i+1,
+            blockNumber:log.blockNumber,
+            modelId:modelIdX,
+            datasetId:datasetIdX,
+            datasetVersion:Number(datasetVersion),
+            trainingConfigHash,
+            registrant,
+            gasUsed,
+            txHash:log.transactionHash,
+            iso: new Date(Number(timestamp)*1000).toISOString()
+          });
         }
+
         rows.sort((a,b)=> (a.blockNumber||0)-(b.blockNumber||0));
-        $("summaryModels").style.display="block";
-        $("summaryModels").innerHTML = `<div><strong>${rows.length}</strong> ModelRegistered event(s).</div>`;
-        const tbody=$("rowsModels"); tbody.innerHTML="";
-        for(const r of rows){
-          const tr=document.createElement("tr");
-          tr.innerHTML=`
+
+        sum.style.display="block";
+        sum.innerHTML = `<div><strong>${rows.length}</strong> ModelRegistered event(s).</div>`;
+
+        tbody.innerHTML = "";
+        for (const r of rows) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
             <td>${r.idx}</td><td>${r.blockNumber}</td>
             <td><code class="mono" title="${r.modelId}">${short(r.modelId,10,10)}</code></td>
             <td><code class="mono" title="${r.datasetId}">${short(r.datasetId,10,10)}</code></td>
@@ -378,10 +459,15 @@
             <td class="mono">${r.iso}</td>`;
           tbody.appendChild(tr);
         }
-        $("tableModels").style.display="block"; $("statusModels").textContent = "Done.";
-      } catch(e){ console.error(e); $("statusModels").textContent = `Error: ${e?.message||e}`; }
+
+        table.style.display="block";
+        statusEl.textContent = "Done.";
+      } catch (e) {
+        console.error(e);
+        ( $("statusModels") || $("status") ).textContent = `Error: ${e?.message||e}`;
+      }
     }
-    $("goModels").onclick = fetchModels;
+    $("goModels").addEventListener("click", fetchModels);
 
     $("btnCompute").onclick = async () => {
       $("btnCompute").disabled = true; $("statusCompute").textContent = "Computing…";
@@ -393,6 +479,7 @@
       } catch(e){ console.error(e); $("statusCompute").textContent = `Error: ${e?.message||e}`; }
       finally { $("btnCompute").disabled=false; }
     };
+
     $("btnGetModel").onclick = async () => {
       $("btnGetModel").disabled = true; $("statusGetModel").textContent = "Fetching…";
       try {
@@ -409,6 +496,7 @@
       } catch(e){ console.error(e); $("statusGetModel").textContent = `Error: ${e?.message||e}`; }
       finally { $("btnGetModel").disabled=false; }
     };
+
     $("btnVerify").onclick = async () => {
       $("btnVerify").disabled = true; $("statusVerify").textContent = "Verifying…";
       try {
@@ -426,58 +514,7 @@
       finally { $("btnVerify").disabled=false; }
     };
 
-    // helpers
-    const b32 = (x) => /^0x[0-9a-fA-F]{64}$/.test(String(x||'').trim());
-    function pick(obj, paths) {
-      for (const p of paths) {
-        const parts = p.split('.');
-        let cur = obj, ok = true;
-        for (const part of parts) {
-          if (cur && Object.prototype.hasOwnProperty.call(cur, part)) cur = cur[part];
-          else { ok = false; break; }
-        }
-        if (ok && cur != null) return cur;
-      }
-      return undefined;
-    }
-
-    // Merkle helpers (keccak256 of 32B|32B; duplicate last on odd)
-    const keccak = ethers.keccak256;
-    const toBytes = ethers.getBytes;
-    const toHex   = ethers.hexlify;
-    const concat64 = (a,b) => { const out = new Uint8Array(64); out.set(a,0); out.set(b,32); return out; };
-    function merkleRootFromLeaves(leaves){
-      if (!leaves.length) return null;
-      let level = leaves.slice();
-      while (level.length > 1){
-        if (level.length % 2 === 1) level.push(level[level.length-1]);
-        const next = [];
-        for (let i=0;i<level.length;i+=2){
-          next.push( toBytes(keccak(concat64(level[i], level[i+1]))) );
-        }
-        level = next;
-      }
-      return toHex(level[0]);
-    }
-    function merkleProofFromLeaves(leaves, idx){
-      let level = leaves.slice(), i = idx, proof = [];
-      while (level.length > 1){
-        if (level.length % 2 === 1) level.push(level[level.length-1]);
-        const next = [];
-        for (let k=0;k<level.length;k+=2){
-          const L = level[k], R = level[k+1];
-          if (k===i || k+1===i){
-            proof.push( toHex(k===i ? R : L) );
-            i = next.length;
-          }
-          next.push( toBytes(keccak(concat64(L,R))) );
-        }
-        level = next;
-      }
-      return proof;
-    }
-
-    // Load verify bundle → fill fields (now also maps root → version via on-chain scan)
+    // --- Verify bundle loader (also maps root → version by scanning) ---
     document.getElementById('btnLoadBundle').onclick = async () => {
       const st = document.getElementById('statusVerify');
       const fileInp = document.getElementById('verifyBundle');
@@ -517,6 +554,158 @@
       }
     };
   });
+  
   </script>
+
+  <script>
+  (function(){
+    const $ = (id)=>document.getElementById(id);
+    const trunc = (hx)=> (typeof hx==="string" && hx.startsWith("0x") && hx.length>18)
+                        ? (hx.slice(0,10) + "…" + hx.slice(-6)) : hx;
+
+    function parseMerkleHashes(text) {
+      const lines = (text||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      let root = "";
+      const leaves = []; // {file, hash}
+      for (const ln of lines) {
+        // Root line examples: "MERKLE ROOT: 0x...", "Merkle Root: 0x..."
+        const mRoot = ln.match(/merkle\s*root\s*:\s*(0x[0-9a-fA-F]{64})/i);
+        if (mRoot) { root = mRoot[1]; continue; }
+        // File line examples: "tokenized_admissions.jsonl: 0x...."
+        const mFile = ln.match(/^(.+?):\s*(0x[0-9a-fA-F]{64})$/);
+        if (mFile) {
+          leaves.push({ file: mFile[1].trim(), hash: mFile[2] });
+        }
+      }
+      return { root, leaves };
+    }
+
+    // Recompute the entire tree (sorted-pair with duplicate-last)
+    function buildTree(leaves) {
+      if (!leaves.length) return { levels: [], root: "" };
+      // Build level 0 (bytes)
+      const L0 = leaves.map(l => l.hash);
+      const levels = [ L0.slice() ];
+      let level = L0.slice();
+      while (level.length > 1) {
+        if (level.length % 2 === 1) level.push(level[level.length-1]);
+        const next = [];
+        for (let i=0; i<level.length; i+=2) {
+          const a = level[i], b = level[i+1];
+          // sorted pair keccak
+          const ab = (a.toLowerCase() < b.toLowerCase())
+            ? ethers.solidityPackedKeccak256(["bytes32","bytes32"], [a,b])
+            : ethers.solidityPackedKeccak256(["bytes32","bytes32"], [b,a]);
+          next.push(ab);
+        }
+        levels.push(next);
+        level = next;
+      }
+      return { levels, root: level[0] };
+    }
+
+    function renderTree(container, files, tree, showAll) {
+      container.innerHTML = "";
+      const levels = tree.levels;
+      const wrap = document.createElement("div");
+      wrap.style.display = "grid";
+      wrap.style.gap = "10px";
+
+      // Leaves: show filenames → truncated hash (first 10, unless showAll)
+      const leavesCard = document.createElement("div");
+      leavesCard.innerHTML = `<div class="muted" style="margin:4px 0">Leaves (n=${files.length})</div>`;
+      const ul = document.createElement("ul");
+      ul.style.margin = "6px 0 0 0";
+      ul.style.paddingLeft = "18px";
+      const maxShow = showAll ? files.length : Math.min(files.length, 10);
+      for (let i=0; i<maxShow; i++) {
+        const li = document.createElement("li");
+        li.className = "mono";
+        li.textContent = `${files[i].file} → ${trunc(files[i].hash)}`;
+        ul.appendChild(li);
+      }
+      if (!showAll && files.length > maxShow) {
+        const li = document.createElement("li");
+        li.className = "mono muted";
+        li.textContent = `… ${files.length - maxShow} more`;
+        ul.appendChild(li);
+      }
+      leavesCard.appendChild(ul);
+      wrap.appendChild(leavesCard);
+
+      // Internal levels (compact)
+      for (let lvl = 1; lvl < levels.length; lvl++) {
+        const L = levels[lvl];
+        const card = document.createElement("div");
+        card.innerHTML = `<div class="muted" style="margin:4px 0">Level ${lvl} (size=${L.length})</div>`;
+        const row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.flexWrap = "wrap";
+        row.style.gap = "8px";
+        const lim = showAll ? L.length : Math.min(L.length, 10);
+        for (let i=0; i<lim; i++) {
+          const chip = document.createElement("code");
+          chip.className = "mono";
+          chip.style.border = "1px solid #e5e7eb";
+          chip.style.borderRadius = "8px";
+          chip.style.padding = "4px 8px";
+          chip.textContent = trunc(L[i]);
+          row.appendChild(chip);
+        }
+        if (!showAll && L.length > lim) {
+          const more = document.createElement("span");
+          more.className = "mono muted";
+          more.style.padding = "4px 8px";
+          more.textContent = `… ${L.length - lim} more`;
+          row.appendChild(more);
+        }
+        card.appendChild(row);
+        wrap.appendChild(card);
+      }
+      container.appendChild(wrap);
+    }
+
+    async function loadTextFromFile(inputEl) {
+      const f = inputEl.files?.[0];
+      if (!f) return "";
+      return await f.text();
+    }
+
+    $("btnRenderTree").onclick = async ()=>{
+      $("mhStatus").textContent = "Parsing…";
+      try{
+        let text = $("mhPaste").value.trim();
+        if (!text) text = await loadTextFromFile($("mhFile"));
+        if (!text) throw new Error("Provide merkle_hashes.txt (file or paste).");
+
+        const parsed = parseMerkleHashes(text);
+        if (!parsed.leaves.length) throw new Error("No leaves found in the text.");
+        // Build tree and compare root (if root line exists)
+        const tree = buildTree(parsed.leaves);
+        $("mhRoot").innerHTML =
+          `<div class="mono">Computed root: <b>${tree.root}</b>${
+            parsed.root ? ` &nbsp; | &nbsp; Provided: ${parsed.root} &nbsp; ${
+              (parsed.root.toLowerCase()===tree.root.toLowerCase()) ? "✅" : "❌"
+            }` : ""
+          }</div>`;
+
+        renderTree($("mhTree"), parsed.leaves, tree, $("chkShowAll").checked);
+        $("mhStatus").textContent = "Rendered.";
+      }catch(e){
+        $("mhStatus").textContent = "Error: " + (e.message||e);
+      }
+    };
+
+    $("chkShowAll").onchange = ()=>{
+      // re-render if we already have a tree on screen
+      const rootText = $("mhRoot").textContent || "";
+      if (!rootText) return;
+      // quick re-run render using last parsed leaves if you want to cache;
+      // simplest is to click Render again:
+      $("btnRenderTree").click();
+    };
+  })();
+  </script>
+
 </body>
 </html>

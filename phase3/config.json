@@ -1,0 +1,45 @@
+{
+  "rpcUrl": "https://YOUR_RPC_PROVIDER_URL_HERE",
+
+  "phase3": {
+    "contract": "0xYOUR_PHASE3_CONTRACT",
+    "chainId": 11155111,
+    "eip712": {
+      "name": "LLMOutputReceipt",
+      "version": "1"
+    }
+  },
+
+  "phase2": {
+    "contract": "0xYOUR_PHASE2_CONTRACT",
+    "modelId": "0xMODEL_ID_BYTES32",
+    "weightsHash": "0xWEIGHTS_HASH_BYTES32"
+  },
+
+  "batch": {
+    "root": "0xBATCH_ROOT_BYTES32",
+    "cid": "ipfs://YOUR_BATCH_MANIFEST_CID",
+    "txHash": "0xCOMMIT_TX_BYTES32",
+    "index": 0,
+
+    "leaf": "0xLEAF_BYTES32",
+    "proof": [
+      "0xPROOF_SIBLING_1",
+      "0xPROOF_SIBLING_2"
+    ],
+
+    "inputHash": "0xINPUT_HASH_BYTES32",
+    "outputHash": "0xOUTPUT_HASH_BYTES32",
+    "xaiHash": "0xXAI_HASH_BYTES32"
+  },
+
+  "publisher": {
+    "address": "0xYOUR_PUBLISHER_ADDRESS"
+  },
+
+  "ipfs": {
+    "proxyUrl": "http://localhost:8020"
+  },
+
+  "abiUrl": "./abi.outputAuthentication.json"
+}

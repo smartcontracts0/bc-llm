@@ -1,0 +1,763 @@
+<!-- verify.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Phase 3 — Verify</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{ --page-width:1040px; --gap:14px; --radius:14px; --border:#e5e7eb; --muted:#6b7280; --ink:#111827; }
+    *{ box-sizing:border-box; }
+    body{ font-family: system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; line-height:1.45; margin:18px auto; padding:0 18px; max-width:var(--page-width); background:#fff; }
+    h1{ margin:0 0 14px; font-size:1.35rem; }
+    h3{ margin:0 0 10px; font-size:1.05rem; }
+    .card{ border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:14px 0; box-shadow:0 1px 2px rgba(0,0,0,.04); background:#fff; }
+    label{ display:block; font-size:.92rem; color:#374151; margin:0 0 6px; }
+    input, textarea, select, button{ font:inherit; width:100%; padding:11px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; }
+    textarea{ min-height:96px; resize:vertical; }
+    .mono, code{ font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .grid2{ display:grid; gap:14px; grid-template-columns:1fr; }
+    @media (min-width:880px){ .grid2{ grid-template-columns:1fr 1fr; } }
+    .row{ display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+    .row > *{ flex:1 1 220px; }
+    button{ background:#111827; color:#fff; cursor:pointer; border:1px solid #111827; padding:12px 16px; margin:8px 0; border-radius:12px; }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+    .muted{ color:#6b7280; }
+    .nav a{ margin-right:12px; }
+    .warn{ color:#b91c1c; font-weight:600; }
+    .ok{ color:#065f46; font-weight:600; }
+    pre{ background:#f9fafb; padding:10px 12px; border-radius:10px; overflow:auto; border:1px solid #e5e7eb; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="index.html">← Home</a>
+    <a href="register.html">Console</a>
+  </div>
+
+  <h1>Verify Receipt & Merkle Membership</h1>
+
+  <div class="card">
+    <div class="grid2">
+      <div><label>RPC URL</label><input id="rpc" value=""></div>
+      <div><label>Phase 3 Contract Address</label><input id="addr" placeholder="0x..." /></div>
+    </div>
+    <div class="row">
+      <button id="btnCheck">Check Contract</button>
+      <button id="btnReloadCfg" style="background:#374151;border-color:#374151;">Reload config.json</button>
+      <span id="statusCheck" class="muted"></span>
+    </div>
+    <div id="netWarn" class="muted"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Compute leaf (keccak(inputHash || outputHash || xaiHash))</h3>
+    <div class="grid2">
+      <div><label>inputHash (bytes32)</label><input id="ih" class="mono" placeholder="0x..."></div>
+      <div><label>outputHash (bytes32)</label><input id="oh" class="mono" placeholder="0x..."></div>
+      <div><label>xaiHash (bytes32)</label><input id="xh" class="mono" placeholder="0x..."></div>
+      <div><label>leaf (auto)</label><input id="leaf" class="mono" readonly></div>
+    </div>
+    <div class="row">
+      <button id="btnLeafLocal">Compute (local)</button>
+      <button id="btnLeafContract">Compute via Contract</button>
+      <span id="statusLeaf" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Merkle Membership</h3>
+    <div class="grid2">
+      <div><label>batchRoot (bytes32)</label><input id="root" class="mono" placeholder="0x..."></div>
+      <div><label>proof (bytes32[], comma/space separated)</label><textarea id="proof" class="mono" placeholder="0x..., 0x..., 0x..."></textarea></div>
+    </div>
+    <div class="row">
+      <button id="btnVerifyMembership">verifyBatchMembership(input, output, xai, proof, root)</button>
+      <button id="btnVerifyProof">verifyBatchProof(leaf, proof, root)</button>
+      <span id="statusMem" class="muted"></span>
+    </div>
+  </div>
+
+  <!-- Fetch manifest & auto-build proofs -->
+  <div class="card">
+    <h3 style="margin-top:0">Fetch Manifest from CID & Auto-Build Proof</h3>
+    <div class="grid2">
+      <div><label>IPFS Proxy (from config.json)</label><input id="mf_ipfs" value=""></div>
+      <div><label>Manifest CID (or ipfs://...)</label><input id="mf_cid" class="mono" placeholder="bafy... or ipfs://bafy..."></div>
+      <div><label>Item index</label><input id="mf_index" type="number" min="0" step="1" value="0"></div>
+      <div><label>Schema (auto)</label><input id="mf_schema" readonly></div>
+    </div>
+    <div class="row">
+      <button id="btnFetchManifest">Fetch & Parse</button>
+      <button id="btnBuildProof">Build Proof for Index</button>
+      <span id="statusMf" class="muted"></span>
+    </div>
+    <div id="mf_info" class="muted"></div>
+  </div>
+
+  <!-- Revocation & Publisher window checks -->
+  <div class="card">
+    <h3 style="margin-top:0">Revocation & Publisher Window</h3>
+    <div class="grid2">
+      <div><label>modelId (bytes32)</label><input id="rv_modelId" class="mono" placeholder="0x..."></div>
+      <div><label>leaf (bytes32; or compute above)</label><input id="rv_leaf" class="mono" placeholder="0x..."></div>
+      <div><label>batchRoot (bytes32)</label><input id="rv_root" class="mono" placeholder="0x..."></div>
+      <div><label>publisher (address)</label><input id="rv_pub" class="mono" placeholder="0x..."></div>
+    </div>
+    <div class="row">
+      <button id="btnChkLeaf">Check Leaf Revocation</button>
+      <button id="btnChkRoot">Check Root Revocation</button>
+      <button id="btnChkWindow">Check Publisher Window</button>
+      <span id="statusRev" class="muted"></span>
+    </div>
+    <pre id="revDump" style="display:none"></pre>
+  </div>
+
+  <!-- Wallet & EIP-712 Signing -->
+  <div class="card">
+    <h3 style="margin-top:0">Wallet & EIP-712 Signing</h3>
+    <div class="row">
+      <button id="btnConnect">Connect Wallet</button>
+      <span id="statusWallet" class="muted"></span>
+    </div>
+    <div class="grid2">
+      <div><label>Connected account (auto)</label><input id="acct" class="mono" readonly></div>
+      <div><label>Domain (name,version from config.json)</label><input id="domainInfo" class="mono" readonly></div>
+    </div>
+    <div class="row">
+      <button id="btnSignReceipt">Sign EIP-712 Receipt</button>
+      <button id="btnExportBundle" style="background:#374151;border-color:#374151;">Export receipt_bundle.json</button>
+      <span id="statusSign" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Verify EIP-712 Receipt</h3>
+    <div class="grid2">
+      <div><label>modelId (bytes32)</label><input id="r_modelId" class="mono" placeholder="0x..."></div>
+      <div><label>weightsHash (bytes32)</label><input id="r_weights" class="mono" placeholder="0x..."></div>
+      <div><label>batchRoot (bytes32)</label><input id="r_root" class="mono" placeholder="0x..."></div>
+      <div><label>batchCID (string)</label><input id="r_cid" class="mono" placeholder="ipfs://..."></div>
+      <div><label>txHash (bytes32)</label><input id="r_tx" class="mono" placeholder="0x..."></div>
+      <div><label>index (uint256)</label><input id="r_idx" type="number" min="0" step="1" value="0"></div>
+      <div><label>leaf (bytes32)</label><input id="r_leaf" class="mono" placeholder="0x..."></div>
+      <div><label>publisher (address)</label><input id="r_pub" class="mono" placeholder="0x..."></div>
+      <div><label>timestamp (uint64)</label><input id="r_ts" type="number" min="0" step="1" value="0"></div>
+      <div><label>signature (0x…65 bytes)</label><input id="r_sig" class="mono" placeholder="0x..."></div>
+    </div>
+    <div class="row">
+      <button id="btnVerifyReceipt">verifyReceipt(receipt, sig)</button>
+      <button id="btnVerifyAll">verifyReceiptAndMembership(receipt, sig, proof)</button>
+      <span id="statusRcpt" class="muted"></span>
+    </div>
+    <div class="row">
+      <div>
+        <label>Load receipt_bundle.json</label>
+        <input id="receiptFile" type="file" accept=".json,application/json">
+      </div>
+      <div style="display:flex;align-items:flex-end;">
+        <button id="btnLoadReceipt">Load → Fill fields</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const isB32 = (s)=>/^0x[0-9a-fA-F]{64}$/.test((s||"").trim());
+    const isAddr = (s)=>{ try{ ethers.getAddress((s||"").trim()); return true; }catch{ return false; } };
+    const zero32 = "0x" + "0".repeat(64);
+
+    const CONFIG_URL = "config.json";
+    let CFG = null;
+    let ABI = null;
+    let provider, contract;
+
+    async function loadConfig(apply=true){
+      const res = await fetch(CONFIG_URL, {cache:"no-cache"});
+      CFG = await res.json();
+      if(apply) applyConfig(CFG);
+    }
+    async function loadABI(c){
+      if (ABI) return;
+      if (c.abiUrl) {
+        const r = await fetch(c.abiUrl, { cache: "no-cache" });
+        ABI = await r.json();
+      } else if (c.abiInline) {
+        ABI = c.abiInline;
+      } else {
+        throw new Error("ABI not provided. Add `abiUrl` (or `abiInline`) in config.json");
+      }
+    }
+    function applyConfig(c){
+      if(c.rpcUrl) $("rpc").value = c.rpcUrl;
+      if(c.phase3?.contract) $("addr").value = c.phase3.contract;
+
+      if(c.batch?.inputHash) $("ih").value = c.batch.inputHash;
+      if(c.batch?.outputHash) $("oh").value = c.batch.outputHash;
+      if(c.batch?.xaiHash) $("xh").value = c.batch.xaiHash;
+      if(c.batch?.leaf) $("leaf").value = c.batch.leaf;
+      if(c.batch?.root) $("root").value = c.batch.root;
+      if(c.batch?.proof?.length) $("proof").value = c.batch.proof.join(", ");
+
+      if(c.phase2?.modelId) $("r_modelId").value = c.phase2.modelId;
+      if(c.phase2?.weightsHash) $("r_weights").value = c.phase2.weightsHash;
+      if(c.batch?.root) $("r_root").value = c.batch.root;
+      if(c.batch?.cid) $("r_cid").value = (c.batch.cid||"").replace(/^ipfs:\/\/ipfs:\/\//,"ipfs://");
+      if(c.batch?.txHash) $("r_tx").value = c.batch.txHash;
+      if(typeof c.batch?.index === "number") $("r_idx").value = String(c.batch.index);
+      if(c.batch?.leaf) $("r_leaf").value = c.batch.leaf;
+      if(c.publisher?.address) $("r_pub").value = c.publisher.address;
+      if(!Number($("r_ts").value)) $("r_ts").value = String(Math.floor(Date.now()/1000));
+
+      if(c.ipfs?.proxyUrl) $("mf_ipfs").value = c.ipfs.proxyUrl;
+
+      // domain banner
+      const name = (c.phase3?.eip712?.name)||"Phase3Receipt";
+      const ver  = (c.phase3?.eip712?.version)||"1";
+      $("domainInfo").value = `${name} / v${ver}`;
+    }
+    document.addEventListener("DOMContentLoaded", async ()=>{
+      try { await loadConfig(true); } catch(e){ console.warn("config.json load failed:", e); }
+      try { await loadABI(CFG); } catch(e){ console.warn("ABI load failed:", e); }
+    });
+    $("btnReloadCfg").onclick = async ()=>{
+      $("statusCheck").textContent = "Reloading config.json…";
+      try { await loadConfig(true); $("statusCheck").textContent = "Config applied."; }
+      catch(e){ $("statusCheck").textContent = "Config reload error: " + (e.message||e); }
+    };
+
+    async function ensureContract(){
+      const rpc = $("rpc").value.trim();
+      const addr = $("addr").value.trim();
+      if (!rpc) throw new Error("Enter RPC URL.");
+      if (!ethers.isAddress(addr)) throw new Error("Enter a valid contract address.");
+      if (!ABI) await loadABI(CFG);
+      provider = new ethers.JsonRpcProvider(rpc);
+      const code = await provider.getCode(addr);
+      if (!code || code === "0x") throw new Error("No contract code at that address.");
+      contract = new ethers.Contract(addr, ABI, provider);
+      try{
+        const net = await provider.getNetwork();
+        if(CFG?.phase3?.chainId && Number(net.chainId) !== Number(CFG.phase3.chainId)){
+          $("netWarn").innerHTML = "⚠ ChainId mismatch. Provider="+Number(net.chainId)+" vs config="+Number(CFG.phase3.chainId);
+          $("netWarn").className = "warn";
+        } else {
+          $("netWarn").textContent = "";
+          $("netWarn").className = "muted";
+        }
+      }catch{}
+      return contract;
+    }
+
+    $("btnCheck").onclick = async ()=>{
+      $("btnCheck").disabled = true; $("statusCheck").textContent = "Checking…";
+      try { await ensureContract(); $("statusCheck").textContent = "OK — contract code found."; }
+      catch(e){ console.error(e); $("statusCheck").textContent = "Error: " + (e.message||e); }
+      finally { $("btnCheck").disabled = false; }
+    };
+
+    // leaf helpers
+    $("btnLeafLocal").onclick = ()=>{
+      const ih = $("ih").value.trim(), oh = $("oh").value.trim(), xh = $("xh").value.trim();
+      try {
+        if(!isB32(ih)||!isB32(oh)||!isB32(xh)) throw new Error("All 3 hashes must be bytes32.");
+        const leaf = ethers.keccak256(ethers.solidityPacked(["bytes32","bytes32","bytes32"], [ih,oh,xh]));
+        $("leaf").value = leaf; $("statusLeaf").textContent="Done.";
+      } catch(e){ $("statusLeaf").textContent="Error: "+(e.message||e); }
+    };
+    $("btnLeafContract").onclick = async ()=>{
+      $("btnLeafContract").disabled=true; $("statusLeaf").textContent="Calling…";
+      try {
+        await ensureContract();
+        const ih = $("ih").value.trim(), oh = $("oh").value.trim(), xh = $("xh").value.trim();
+        if(!isB32(ih)||!isB32(oh)||!isB32(xh)) throw new Error("All 3 hashes must be bytes32.");
+        const leaf = await contract.computeInferenceLeaf(ih,oh,xh);
+        $("leaf").value = leaf; $("statusLeaf").textContent="Done.";
+      } catch(e){ $("statusLeaf").textContent="Error: "+(e.message||e); }
+      finally{ $("btnLeafContract").disabled=false; }
+    };
+    function parseProof(){
+      const raw = $("proof").value.trim();
+      if(!raw) return [];
+      return raw.split(/[\s,]+/).filter(Boolean);
+    }
+    $("btnVerifyMembership").onclick = async ()=>{
+      $("btnVerifyMembership").disabled=true; $("statusMem").textContent="Calling…";
+      try {
+        await ensureContract();
+        const ih=$("ih").value.trim(),oh=$("oh").value.trim(),xh=$("xh").value.trim(),root=$("root").value.trim();
+        const proof = parseProof();
+        for(const p of proof) if(!isB32(p)) throw new Error("Bad proof element: "+p);
+        if(!isB32(ih)||!isB32(oh)||!isB32(xh)||!isB32(root)) throw new Error("Need bytes32 inputs.");
+        const ok = await contract.verifyBatchMembership(ih,oh,xh,proof,root);
+        $("statusMem").textContent = ok ? "✅ Included (membership true)" : "❌ Not included / bad proof";
+      } catch(e){ $("statusMem").textContent="Error: "+(e.message||e); }
+      finally { $("btnVerifyMembership").disabled=false; }
+    };
+    $("btnVerifyProof").onclick = async ()=>{
+      $("btnVerifyProof").disabled=true; $("statusMem").textContent="Calling…";
+      try {
+        await ensureContract();
+        const leaf=$("leaf").value.trim(), root=$("root").value.trim();
+        const proof = parseProof();
+        if(!isB32(leaf)||!isB32(root)) throw new Error("Need bytes32 leaf/root.");
+        for(const p of proof) if(!isB32(p)) throw new Error("Bad proof element: "+p);
+        const ok = await contract.verifyBatchProof(leaf, proof, root);
+        $("statusMem").textContent = ok ? "✅ Included (proof true)" : "❌ Not included / bad proof";
+      } catch(e){ $("statusMem").textContent="Error: "+(e.message||e); }
+      finally{ $("btnVerifyProof").disabled=false; }
+    };
+
+    // Manifest fetch & proof builder
+    const normIpfsStr = (s)=> (s||"").trim().replace(/^ipfs:\/\/ipfs:\/\//,"ipfs://");
+    const stripIpfs = (s)=>{ s = normIpfsStr(s); if(s.startsWith("ipfs://")) return s.slice("ipfs://".length); return s.replace(/^\/+|\/+$/g,""); };
+    function isHex32(x){ return /^0x[0-9a-fA-F]{64}$/.test((x||"").trim()); }
+    let MF = null, MFleaves = [], MFroot = null, MFitems = [];
+    function kpair(a,b){ const A=a.toLowerCase(), B=b.toLowerCase(); const concat=(A<B)?ethers.concat([A,B]):ethers.concat([B,A]); return ethers.keccak256(concat); }
+    function merkleRoot(leaves){ if(!leaves||!leaves.length) return zero32; let layer=leaves.slice(); while(layer.length>1){ const nxt=[]; for(let i=0;i<layer.length;i+=2){ const L=layer[i], R=(i+1<layer.length)?layer[i+1]:layer[i]; nxt.push(kpair(L,R)); } layer=nxt; } return layer[0]; }
+    function merkleProofAt(leaves,index){ if(index<0||index>=leaves.length) throw new Error("Index out of range"); let idx=index; let layer=leaves.slice(); const proof=[]; while(layer.length>1){ const isLastOdd=(layer.length%2===1)&&(idx===layer.length-1); const sibIdx=isLastOdd?idx:(idx^1); const sibling=layer[sibIdx]; proof.push(sibling); idx=Math.floor(idx/2); const nxt=[]; for(let i=0;i<layer.length;i+=2){ const L=layer[i], R=(i+1<layer.length)?layer[i+1]:layer[i]; nxt.push(kpair(L,R)); } layer=nxt; } return proof; }
+    function toLeaf(ih,oh,xh){ return ethers.keccak256(ethers.solidityPacked(["bytes32","bytes32","bytes32"], [ih,oh,xh])); }
+    function normalizeItemsFromManifest(m){
+      let items=[]; if(m&&Array.isArray(m.items)){ items=m.items; } else if(m&&Array.isArray(m.events)){ items=m.events; } else { throw new Error("No items/events array found in manifest"); }
+      const out=[]; for(const it of items){ const ih=it.inputHash||it.input_hash||it.ih; const oh=it.outputHash||it.output_hash||it.oh; const xh=(it.xaiHash||it.xai_hash||it.xh||zero32); if(!isHex32(ih)||!isHex32(oh)||!isHex32(xh)) throw new Error("Bad item hashes"); out.push({inputHash:ih,outputHash:oh,xaiHash:xh}); } return {items:out};
+    }
+    async function fetchManifestByCID(baseUrl,cid){
+      const cidStr = stripIpfs(cid); const base=(baseUrl||"").trim().replace(/\/+$/,""); const urls=[];
+      if(base){ urls.push(`${base}/ipfs/cat?arg=${cidStr}`); urls.push(`${base}/ipfs/${cidStr}`); }
+      urls.push(`https://ipfs.io/ipfs/${cidStr}`);
+      let lastErr=null;
+      for(const u of urls){ try{ const r=await fetch(u,{cache:"no-cache"}); if(r.ok){ const text=await r.text(); try{ return JSON.parse(text); }catch(e){ throw new Error(`Invalid JSON from ${u}: ${e.message}`);} } else { lastErr=new Error(`HTTP ${r.status} ${r.statusText} from ${u}`);} }catch(e){ lastErr=e; } }
+      throw lastErr || new Error("All fetch attempts failed");
+    }
+    function fillBatchFields(rootHex,idx,leafHex,ih,oh,xh,cid){
+      if(rootHex){ $("root").value=rootHex; $("r_root").value=rootHex; $("rv_root").value=rootHex; }
+      if(leafHex){ $("leaf").value=leafHex; $("r_leaf").value=leafHex; $("rv_leaf").value=leafHex; }
+      if(typeof idx==="number"){ $("r_idx").value=String(idx); }
+      if(isHex32(ih)) $("ih").value=ih;
+      if(isHex32(oh)) $("oh").value=oh;
+      if(isHex32(xh)) $("xh").value=xh;
+      if(cid) $("r_cid").value=normIpfsStr(cid);
+    }
+    $("btnFetchManifest").onclick = async ()=>{
+      $("btnFetchManifest").disabled = true; $("statusMf").textContent = "Fetching manifest…"; $("mf_info").textContent = "";
+      try{
+        const base=$("mf_ipfs").value.trim(); const cid=$("mf_cid").value.trim(); if(!cid) throw new Error("Enter a manifest CID.");
+        const m = await fetchManifestByCID(base,cid); MF=m;
+        let declaredRoot=null;
+        if(m&&m.batch&&isHex32(m.batch.merkleRoot)) declaredRoot=m.batch.merkleRoot;
+        const norm = normalizeItemsFromManifest(m); MFitems=norm.items; MFleaves=MFitems.map(it=>toLeaf(it.inputHash,it.outputHash,it.xaiHash)); MFroot=merkleRoot(MFleaves);
+        const lines=[]; lines.push(`items: ${MFitems.length}`); lines.push(`computedRoot: ${MFroot}`); if(declaredRoot){ lines.push(`declaredRoot: ${declaredRoot}`); lines.push(declaredRoot.toLowerCase()===MFroot.toLowerCase() ? "rootMatch: true ✅" : "rootMatch: false ❌"); }
+        $("mf_info").innerHTML="<pre>"+lines.join("\n")+"</pre>";
+        if(!$("root").value) $("root").value = declaredRoot || MFroot;
+        if(!$("r_root").value) $("r_root").value = declaredRoot || MFroot;
+        $("statusMf").textContent = "Loaded ✔ — choose an index then click “Build Proof for Index”.";
+      }catch(e){ $("statusMf").textContent="Error: "+(e.message||e); }
+      finally{ $("btnFetchManifest").disabled=false; }
+    };
+    $("btnBuildProof").onclick = ()=>{
+      $("btnBuildProof").disabled = true; $("statusMf").textContent = "Building proof…";
+      try{
+        if(!MF || !MFleaves.length) throw new Error("Fetch the manifest first.");
+        const idx = parseInt($("mf_index").value,10) || 0;
+        if(idx<0 || idx>=MFleaves.length) throw new Error("Index out of range.");
+        const proof = merkleProofAt(MFleaves, idx);
+        const it = MFitems[idx]; const leafHex = MFleaves[idx]; const declaredRoot = (MF && MF.batch && isHex32(MF.batch.merkleRoot)) ? MF.batch.merkleRoot : null; const rootHex = declaredRoot || MFroot;
+        $("proof").value = proof.join(", ");
+        fillBatchFields(rootHex, idx, leafHex, it.inputHash, it.outputHash, it.xaiHash, (MF.batch && (MF.batch.batchCID || MF.batch.cid)));
+        $("statusMf").textContent = "Proof ready ✔ — you can now click the verify buttons below.";
+      }catch(e){ $("statusMf").textContent="Error: "+(e.message||e); }
+      finally{ $("btnBuildProof").disabled=false; }
+    };
+
+    // Revocation & window checks
+    $("btnChkLeaf").onclick = async ()=>{
+      $("btnChkLeaf").disabled=true; $("statusRev").textContent="Querying…";
+      try{
+        await ensureContract();
+        const mid=$("rv_modelId").value.trim(), leaf=$("rv_leaf").value.trim();
+        if(!isB32(mid)||!isB32(leaf)) throw new Error("modelId & leaf must be bytes32.");
+        const ok = await contract.revokedLeaf(mid, leaf);
+        $("statusRev").textContent = ok ? "Leaf is REVOKED ❌" : "Leaf is NOT revoked ✅";
+      }catch(e){ $("statusRev").textContent="Error: "+(e.message||e); }
+      finally{ $("btnChkLeaf").disabled=false; }
+    };
+    $("btnChkRoot").onclick = async ()=>{
+      $("btnChkRoot").disabled=true; $("statusRev").textContent="Querying…";
+      try{
+        await ensureContract();
+        const mid=$("rv_modelId").value.trim(), root=$("rv_root").value.trim();
+        if(!isB32(mid)||!isB32(root)) throw new Error("modelId & batchRoot must be bytes32.");
+        const ok = await contract.revokedBatchRoot(mid, root);
+        $("statusRev").textContent = ok ? "Batch root is REVOKED ❌" : "Batch root is NOT revoked ✅";
+      }catch(e){ $("statusRev").textContent="Error: "+(e.message||e); }
+      finally{ $("btnChkRoot").disabled=false; }
+    };
+    $("btnChkWindow").onclick = async ()=>{
+      $("btnChkWindow").disabled=true; $("statusRev").textContent="Querying…"; $("revDump").style.display="none";
+      try{
+        await ensureContract();
+        const mid=$("rv_modelId").value.trim(), pub=$("rv_pub").value.trim();
+        if(!isB32(mid)) throw new Error("modelId must be bytes32.");
+        if(!isAddr(pub)) throw new Error("publisher must be address.");
+        const pr = await contract.publisherRules(mid, pub);
+        const allowedBasic = await contract.isPublisher(mid, pub);
+        const now = BigInt(Math.floor(Date.now()/1000));
+        const start = pr.start;      // BigInt
+        const end   = pr.end;        // BigInt (0 ⇒ no limit)
+        const within = (now >= start) && (end === 0n || now <= end);
+        $("statusRev").textContent = (pr.allowed && within) ? "Publisher window: ACTIVE ✅" : "Publisher window: INACTIVE ❌";
+        $("revDump").style.display="block";
+        $("revDump").textContent = JSON.stringify({ isPublisher: allowedBasic, window:{ allowed: pr.allowed, start: start.toString(), end: end.toString() } }, null, 2);
+      }catch(e){ $("statusRev").textContent="Error: "+(e.message||e); }
+      finally{ $("btnChkWindow").disabled=false; }
+    };
+
+    // Wallet + EIP-712 signing
+    let browserProvider = null;
+    let signer = null;
+    let signerAddr = "";
+
+    async function ensureWallet(){
+      if (!window.ethereum) throw new Error("No EIP-1193 wallet found (install MetaMask).");
+      if (!browserProvider) browserProvider = new ethers.BrowserProvider(window.ethereum);
+      await browserProvider.send("eth_requestAccounts", []);
+      signer = await browserProvider.getSigner();
+      signerAddr = await signer.getAddress();
+      $("acct").value = signerAddr;
+      if (!$("r_pub").value) $("r_pub").value = signerAddr;
+      const net = await browserProvider.getNetwork();
+      const cfgChain = Number(CFG?.phase3?.chainId||0);
+      $("statusWallet").textContent = `Connected ${signerAddr.slice(0,6)}…${signerAddr.slice(-4)} · chainId=${Number(net.chainId)}` + (cfgChain && cfgChain!==Number(net.chainId) ? " (⚠ config mismatch)" : "");
+      return signer;
+    }
+
+    function buildTypedDataFromForm(){
+      const hexOrZero = (v)=>{ const s=(v||"").trim(); if(!s) return zero32; if(!/^0x[0-9a-fA-F]{64}$/.test(s)) throw new Error("bytes32 field invalid"); return s; };
+      const mustHex32 = (v,label)=>{ const s=(v||"").trim(); if(!/^0x[0-9a-fA-F]{64}$/.test(s)) throw new Error(`${label} must be bytes32`); return s; };
+
+      const r = {
+        modelId: mustHex32($("r_modelId").value, "modelId"),
+        weightsHash: hexOrZero($("r_weights").value),
+        batchRoot: mustHex32($("r_root").value, "batchRoot"),
+        batchCID: $("r_cid").value.trim().replace(/^ipfs:\/\/ipfs:\/\//,"ipfs://"),
+        txHash: hexOrZero($("r_tx").value),
+        index: BigInt(parseInt($("r_idx").value,10)||0),
+        leaf: hexOrZero($("r_leaf").value),
+        publisher: $("r_pub").value.trim(),
+        timestamp: BigInt(parseInt($("r_ts").value,10)||0)
+      };
+      if(!r.batchCID) throw new Error("batchCID required.");
+      if(!isAddr(r.publisher)) throw new Error("publisher must be a checksummed address.");
+      return r;
+    }
+
+    $("btnConnect").onclick = async ()=>{
+      $("statusWallet").textContent = "Connecting…";
+      try{ await ensureWallet(); }
+      catch(e){ $("statusWallet").textContent = "Error: "+(e.message||e); }
+    };
+
+    $("btnSignReceipt").onclick = async ()=>{
+      $("btnSignReceipt").disabled = true; $("statusSign").textContent = "Preparing typed data…";
+      try{
+        await ensureWallet();
+        await ensureContract();
+        const net = await browserProvider.getNetwork();
+        const domain = {
+          name: (CFG?.phase3?.eip712?.name) || "Phase3Receipt",
+          version: (CFG?.phase3?.eip712?.version) || "1",
+          chainId: Number(net.chainId),
+          verifyingContract: $("addr").value.trim()
+        };
+        const types = {
+          Receipt: [
+            { name:"modelId",    type:"bytes32" },
+            { name:"weightsHash",type:"bytes32" },
+            { name:"batchRoot",  type:"bytes32" },
+            { name:"batchCID",   type:"string"  },
+            { name:"txHash",     type:"bytes32" },
+            { name:"index",      type:"uint256" },
+            { name:"leaf",       type:"bytes32" },
+            { name:"publisher",  type:"address" },
+            { name:"timestamp",  type:"uint64"  }
+          ]
+        };
+        const message = buildTypedDataFromForm();
+        const sig = await signer.signTypedData(domain, types, message);
+        $("r_sig").value = sig;
+        $("statusSign").textContent = "Signed ✔";
+      }catch(e){
+        $("statusSign").textContent = "Error: "+(e.message||e);
+      }finally{
+        $("btnSignReceipt").disabled = false;
+      }
+    };
+
+    $("btnExportBundle").onclick = () => {
+      try {
+        const receipt = buildTypedDataFromForm();
+        const proof = parseProof();
+        const sig = $("r_sig").value.trim();
+
+        // Convert BigInt fields → strings (or numbers if you prefer)
+        const receiptOut = {
+          ...receipt,
+          index: receipt.index.toString(),
+          timestamp: receipt.timestamp.toString(),
+        };
+
+        const payload = { receipt: receiptOut, signature: sig, proof };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "receipt_bundle.json";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        $("statusSign").textContent = "Exported ✔";
+      } catch (e) {
+        $("statusSign").textContent = "Export error: " + (e.message || e);
+      }
+    };
+
+
+    // Receipt verify
+    $("btnVerifyReceipt").onclick = async ()=>{
+      $("btnVerifyReceipt").disabled=true; $("statusRcpt").textContent="Calling…";
+      try {
+        await ensureContract();
+        const r = buildTypedDataFromForm();
+        const sig = $("r_sig").value.trim();
+        if(!/^0x[0-9a-fA-F]{130}$/.test(sig)) throw new Error("Signature must be 65 bytes hex.");
+        const out = await contract.verifyReceipt(r, sig);
+        $("statusRcpt").textContent = out[0] ? ("✅ ok — signer "+out[1]) : ("❌ invalid — recovered "+out[1]);
+      } catch(e){ $("statusRcpt").textContent="Error: "+(e.message||e); }
+      finally{ $("btnVerifyReceipt").disabled=false; }
+    };
+    $("btnVerifyAll").onclick = async ()=>{
+      $("btnVerifyAll").disabled=true; $("statusRcpt").textContent="Calling…";
+      try {
+        await ensureContract();
+        const r = buildTypedDataFromForm();
+        const sig = $("r_sig").value.trim();
+        if(!/^0x[0-9a-fA-F]{130}$/.test(sig)) throw new Error("Signature must be 65 bytes hex.");
+        const proof = parseProof();
+        const out = await contract.verifyReceiptAndMembership(r, sig, proof);
+        $("statusRcpt").textContent = out[0] ? ("✅ ok (sig+membership) — signer "+out[1]) : ("❌ invalid — signer "+out[1]);
+      } catch(e){ $("statusRcpt").textContent="Error: "+(e.message||e); }
+      finally{ $("btnVerifyAll").disabled=false; }
+    };
+    $("btnLoadReceipt").onclick = async ()=>{
+      const f = $("receiptFile").files?.[0];
+      if(!f) { $("statusRcpt").textContent="Pick a file first."; return; }
+      try {
+        const text = await f.text();
+        const jb = JSON.parse(text);
+        const r = jb.receipt || jb;
+        const sig = jb.signature || jb.sig || "";
+        if(r.modelId) $("r_modelId").value = r.modelId;
+        if(r.weightsHash) $("r_weights").value = r.weightsHash;
+        if(r.batchRoot) $("r_root").value = r.batchRoot;
+        if(r.batchCID) $("r_cid").value = r.batchCID.replace(/^ipfs:\/\/ipfs:\/\//,"ipfs://");
+        if(r.txHash) $("r_tx").value = r.txHash;
+        if(r.index!=null) $("r_idx").value = String(r.index);
+        if(r.leaf) $("r_leaf").value = r.leaf;
+        if(r.publisher) $("r_pub").value = r.publisher;
+        if(r.timestamp!=null) $("r_ts").value = String(r.timestamp);
+        if(jb.proof) $("proof").value = jb.proof.join(", ");
+        if(sig) $("r_sig").value = sig;
+        $("statusRcpt").textContent = "Loaded ✔";
+      } catch(e){ $("statusRcpt").textContent="Error parsing JSON: "+(e.message||e); }
+    };
+  </script>
+
+  <!-- Merkle Tree Visualizer -->
+  <style>
+    .tree-card .row { display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+    .tree-card .row > *{ flex:1 1 220px; }
+    .tree { overflow-x:auto; padding:8px; border:1px dashed #e5e7eb; border-radius:12px; }
+    .tree-cols { display:flex; gap:16px; align-items:flex-start; }
+    .col { display:flex; flex-direction:column; gap:8px; min-width:160px; }
+    .node { border:1px solid #d1d5db; border-radius:10px; padding:8px; background:#fff; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:.85rem; }
+    .node small { color:#6b7280; display:block; }
+    .path { border-color:#2563eb; box-shadow:0 0 0 2px rgba(37,99,235,.15); }
+    .sib { border-style:dashed; }
+    .meta { color:#6b7280; font-size:.9rem; }
+  </style>
+
+  <div class="card tree-card">
+    <h3 style="margin-top:0">Merkle Tree Visualizer</h3>
+    <div class="grid2">
+      <div><label>Batch CID</label><input id="viz_cid" class="mono" placeholder="Qm... or ipfs://Qm..." /></div>
+      <div><label>IPFS gateway (fallback tries Pinata → ipfs.io → dweb.link)</label><input id="viz_gw" value="https://gateway.pinata.cloud/ipfs/"></div>
+    </div>
+    <div class="row">
+      <button id="btnLoadManifest">Load manifest → compute leaves</button>
+      <span id="viz_status" class="muted"></span>
+    </div>
+
+    <div class="row">
+      <div><label>Leaf index</label><input id="viz_idx" type="number" min="0" step="1" value="0"></div>
+      <div><label>Auto-fill proof & leaf</label><button id="btnBuildProofViz">Build proof (fill fields)</button></div>
+      <div><label>Verify via contract</label><button id="btnVerifyPath">verifyBatchProof(leaf, proof, root)</button></div>
+    </div>
+
+    <div class="meta" id="viz_meta"></div>
+    <div class="tree" id="viz_tree"><div class="tree-cols" id="viz_cols"></div></div>
+  </div>
+
+  <script>
+  (() => {
+    const $ = (id)=>document.getElementById(id);
+    const HEX32 = /^0x[0-9a-fA-F]{64}$/;
+
+    const defaultGateways = [
+      "https://gateway.pinata.cloud/ipfs/",
+      "https://ipfs.io/ipfs/",
+      "https://dweb.link/ipfs/"
+    ];
+
+    const hexAbbrev = (h)=> h && h.startsWith("0x") ? (h.slice(0,10)+"…"+h.slice(-6)) : h;
+    const asBytes = (hex)=> ethers.getBytes(hex);
+    const isB32 = (s)=> HEX32.test(s);
+    const normCID = (v)=> (v||"").replace(/^ipfs:\/\//,"").trim();
+    const parentSorted = (aHex, bHex) => {
+      const a = aHex.toLowerCase(), b = bHex.toLowerCase();
+      const bytes = a < b ? ethers.concat([asBytes(a), asBytes(b)]) : ethers.concat([asBytes(b), asBytes(a)]);
+      return ethers.keccak256(bytes);
+    };
+    const leafOf = (ih, oh, xh) => ethers.keccak256(ethers.solidityPacked(["bytes32","bytes32","bytes32"], [ih,oh,xh]));
+
+    async function fetchJSONfromCID(cid, prefer) {
+      const bases = [];
+      if (prefer && prefer.trim()) bases.push(prefer.trim().replace(/\/+$/,"") + "/");
+      for (const g of defaultGateways) if (!bases.includes(g)) bases.push(g);
+      let lastErr = null;
+      for (const base of bases) {
+        try {
+          const r = await fetch(base + normCID(cid), { cache:"no-cache" });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return await r.json();
+        } catch(e){ lastErr = e; }
+      }
+      throw lastErr || new Error("All gateways failed");
+    }
+
+    let events = [];
+    let leaves = [];
+    let rootComputed = null;
+
+    function renderMeta(count, depth, rootHex, matches) {
+      $("viz_meta").innerHTML = `Leaves: <b>${count}</b> · Depth: <b>${depth}</b> · Root (local): <code>${hexAbbrev(rootHex)}</code>${typeof matches==="boolean" ? (" · Root ≟ input: <b>"+(matches?"match ✅":"mismatch ❌")+"</b>") : ""}`;
+    }
+    function computeRoot(leavesHex) {
+      if (!leavesHex.length) throw new Error("no leaves");
+      let level = leavesHex.slice();
+      while (level.length > 1) {
+        if (level.length % 2 === 1) level.push(level[level.length-1]);
+        const next = [];
+        for (let i=0; i<level.length; i+=2) next.push(parentSorted(level[i], level[i+1]));
+        level = next;
+      }
+      return level[0];
+    }
+    function buildProof(leavesHex, idx) {
+      if (!(idx >= 0 && idx < leavesHex.length)) throw new Error("idx out of range");
+      let proof = [], level = leavesHex.slice(), i = idx;
+      while (level.length > 1) {
+        if (level.length % 2 === 1) level.push(level[level.length-1]);
+        const sib = (i % 2 === 0) ? i+1 : i-1;
+        proof.push(level[sib]);
+        const next = [];
+        for (let j=0; j<level.length; j+=2) next.push(parentSorted(level[j], level[j+1]));
+        level = next; i = Math.floor(i/2);
+      }
+      return proof;
+    }
+    function renderPath(leavesHex, idx) {
+      const cols = $("viz_cols"); cols.innerHTML="";
+      if (!leavesHex.length) return;
+      let level = leavesHex.slice(); let i = idx; const maxLevels = 32; let depth = 0;
+      while (level.length > 1 && depth < maxLevels) {
+        if (level.length % 2 === 1) level.push(level[level.length-1]);
+        const sib = (i % 2 === 0) ? i+1 : i-1;
+        const col = document.createElement("div"); col.className="col";
+        const me  = document.createElement("div"); me.className="node path";
+        me.innerHTML = `<small>node [${i}]</small>${hexAbbrev(level[i])}`;
+        const s   = document.createElement("div"); s.className="node sib";
+        s.innerHTML = `<small>sibling [${sib}]</small>${hexAbbrev(level[sib])}`;
+        const rest = document.createElement("div"); rest.className="meta";
+        rest.textContent = `… + ${Math.max(level.length-2,0)} others`;
+        col.appendChild(me); col.appendChild(s); col.appendChild(rest); cols.appendChild(col);
+        const next = []; for (let j=0; j<level.length; j+=2) next.push(parentSorted(level[j], level[j+1]));
+        level = next; i = Math.floor(i/2); depth++;
+      }
+      const rootCol = document.createElement("div"); rootCol.className="col";
+      const rootNode = document.createElement("div"); rootNode.className="node path";
+      rootNode.innerHTML = `<small>root</small>${hexAbbrev(level[0])}`;
+      rootCol.appendChild(rootNode); $("viz_cols").appendChild(rootCol);
+    }
+
+    $("btnLoadManifest").onclick = async () => {
+      $("viz_status").textContent = "Loading manifest…";
+      try {
+        const cid = $("viz_cid").value.trim() || $("r_cid")?.value?.trim() || "";
+        if (!cid) throw new Error("Enter a Batch CID or load a receipt with one.");
+        const man = await fetchJSONfromCID(cid, $("viz_gw").value.trim());
+        if (!Array.isArray(man.events) || !man.events.length) throw new Error("Manifest missing events[]");
+        events = man.events;
+        leaves = events.map(e => {
+          const ih = String(e.inputHash).trim(), oh = String(e.outputHash).trim(), xh = String(e.xaiHash).trim();
+          if (!(isB32(ih) && isB32(oh) && isB32(xh))) throw new Error("Bad hex32 in manifest row");
+          return leafOf(ih, oh, xh);
+        });
+        rootComputed = computeRoot(leaves);
+        const rootInBox = $("root")?.value?.trim();
+        const matches = isB32(rootInBox) ? (rootInBox.toLowerCase() === rootComputed.toLowerCase()) : undefined;
+        renderMeta(leaves.length, Math.ceil(Math.log2(Math.max(1, leaves.length))), rootComputed, matches);
+        $("viz_status").textContent = "Manifest OK — leaves & root computed.";
+        $("viz_idx").max = String(leaves.length-1);
+        renderPath(leaves, Math.min(parseInt($("viz_idx").value||"0",10), leaves.length-1));
+      } catch(e) { $("viz_status").textContent = "Error: "+(e.message||e); }
+    };
+
+    $("viz_idx").addEventListener("change", ()=>{
+      if (!leaves.length) return;
+      const idx = Math.min(Math.max(0, parseInt($("viz_idx").value||"0",10)), leaves.length-1);
+      renderPath(leaves, idx);
+    });
+
+    $("btnBuildProofViz").onclick = () => {
+      if (!leaves.length) { $("viz_status").textContent="Load a manifest first."; return; }
+      const idx = Math.min(Math.max(0, parseInt($("viz_idx").value||"0",10)), leaves.length-1);
+      const proof = buildProof(leaves, idx);
+      const leaf  = leaves[idx];
+      $("leaf").value     = leaf;
+      $("r_leaf") && ($("r_leaf").value = leaf);
+      $("proof").value    = proof.join(", ");
+      if (rootComputed) {
+        $("root").value   = rootComputed;
+        $("r_root") && ($("r_root").value = rootComputed);
+      }
+      $("viz_status").textContent = "Proof built and fields filled.";
+    };
+
+    $("btnVerifyPath").onclick = async () => {
+      $("btnVerifyPath").disabled = true; $("viz_status").textContent = "Verifying via contract…";
+      try {
+        if (!leaves.length) throw new Error("Load a manifest first.");
+        const idx = Math.min(Math.max(0, parseInt($("viz_idx").value||"0",10)), leaves.length-1);
+        const proof = $("proof").value.split(/[\s,]+/).filter(Boolean);
+        const leaf  = $("leaf").value.trim() || leaves[idx];
+        const root  = $("root").value.trim() || rootComputed;
+        if (!proof.every(p => HEX32.test(p))) throw new Error("Bad proof element.");
+        if (!HEX32.test(leaf) || !HEX32.test(root)) throw new Error("Need bytes32 leaf/root.");
+        await ensureContract();
+        const ok = await contract.verifyBatchProof(leaf, proof, root);
+        $("viz_status").textContent = ok ? "✅ Included (proof true)" : "❌ Not included / bad proof";
+      } catch(e){ $("viz_status").textContent = "Error: "+(e.message||e); }
+      finally { $("btnVerifyPath").disabled = false; }
+    };
+  })();
+  </script>
+</body>
+</html>

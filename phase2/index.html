@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Phase 2 — Console & Viewer</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{ --page:1000px; --gap:14px; --radius:14px; --border:#e5e7eb; --muted:#6b7280; --ink:#0b0d10; }
+    *{ box-sizing:border-box; }
+    body{ font-family: system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; line-height:1.45; margin:18px auto; padding:0 18px; max-width:var(--page); background:#fff; color:var(--ink); }
+    h1{ margin:0 0 14px; font-size:1.35rem; }
+    .card{ border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:14px 0; box-shadow:0 1px 2px rgba(0,0,0,.04); background:#fff; }
+    a.button{ display:inline-block; padding:12px 16px; margin:6px 8px 0 0; border-radius:12px; background:#111827; color:#fff; text-decoration:none; border:1px solid #111827; }
+    .muted{ color:#6b7280; }
+    code{ background:#f9fafb; padding:2px 6px; border-radius:6px; }
+    .grid2{ display:grid; gap:10px; grid-template-columns:1fr; }
+    @media (min-width:800px){ .grid2{ grid-template-columns:1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>Phase 2 — Execution & Viewer</h1>
+
+  <div class="card">
+    <p>Pick a tool:</p>
+    <p>
+      <a class="button" href="phase2_console.html">Open Console (execute tx)</a>
+      <a class="button" href="phase2_viewer.html">Open Viewer (read-only)</a>
+    </p>
+    <p class="muted">Both pages read <code>config/phase2.config.json</code> and the ABI file you reference there.</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Config Snapshot</h3>
+    <div class="grid2">
+      <div><strong>RPC</strong><div id="rpc" class="muted">—</div></div>
+      <div><strong>Phase-2 Address</strong><div id="addr" class="muted mono">—</div></div>
+      <div><strong>ABI URL</strong><div id="abi" class="muted">—</div></div>
+      <div><strong>ChainId</strong><div id="chain" class="muted">—</div></div>
+      <div><strong>Default ModelId</strong><div id="mid" class="muted mono">—</div></div>
+      <div><strong>Logs Range</strong><div id="range" class="muted">—</div></div>
+    </div>
+    <p><button id="btnReload" style="background:#374151;color:#fff;border:1px solid #374151;border-radius:10px;padding:10px 12px;cursor:pointer;">Reload config.json</button>
+      <span id="status" class="muted"></span></p>
+  </div>
+
+  <script>
+    const $ = id=>document.getElementById(id);
+    async function loadJSON(p){ const r = await fetch(p,{cache:"no-store"}); if(!r.ok) throw new Error("load "+p+" failed"); return r.json(); }
+    async function loadCfg(){
+      // try common locations
+      const tries = [
+        "config/phase2.config.json","/config/phase2.config.json","../config/phase2.config.json",
+        "config/phase2.config.example.json"
+      ];
+      for (const t of tries){
+        try { return await loadJSON(t); } catch {}
+      }
+      throw new Error("No phase2.config.json found");
+    }
+    async function show(){
+      $("status").textContent = "Loading…";
+      try{
+        const cfg = await loadCfg();
+        $("rpc").textContent = cfg.rpcUrl || "—";
+        $("addr").textContent = cfg.phase2Address || "—";
+        $("abi").textContent = cfg.abiUrl || "—";
+        $("chain").textContent = (cfg.chainId!=null ? String(cfg.chainId) : "—");
+        $("mid").textContent = cfg.defaultModelId || "—";
+        const fb = (cfg.fromBlock!=null ? cfg.fromBlock : "—");
+        const tb = (cfg.toBlock!=null ? cfg.toBlock : "—");
+        $("range").textContent = `${fb} → ${tb}`;
+        $("status").textContent = "OK";
+      }catch(e){
+        $("status").textContent = (e.message||e);
+      }
+    }
+    $("btnReload").onclick = show;
+    show();
+  </script>
+</body>
+</html>

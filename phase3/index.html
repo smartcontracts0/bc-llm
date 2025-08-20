@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Phase 3 — Output Authentication</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{ --page-width:1040px; --gap:14px; --radius:14px; --border:#e5e7eb; --muted:#6b7280; --ink:#111827; }
+    *{ box-sizing:border-box; }
+    body{ font-family: system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; line-height:1.45; margin:18px auto; padding:0 18px; max-width:var(--page-width); background:#fff; }
+    h1{ margin:0 0 14px; font-size:1.35rem; }
+    .card{ border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:14px 0; box-shadow:0 1px 2px rgba(0,0,0,.04); background:#fff; }
+    .nav a{ margin-right:12px; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="verify.html">Verify (Receipts & Merkle)</a>
+    <a href="register.html">Console (Sign, Set Publisher, Store Hash)</a>
+  </div>
+  <h1>Phase 3 — Output Authentication</h1>
+  <div class="card">
+    <p>This UI verifies content provenance for Phase 3:</p>
+    <ul>
+      <li><strong>Verify</strong> EIP-712 receipts and Merkle membership against your <code>OutputAuthentication</code> contract.</li>
+      <li><strong>Sign</strong> receipts with MetaMask, <strong>setPublisher</strong>, and <strong>storeContentHash</strong>.</li>
+    </ul>
+    <p>Host this folder at <code>http://localhost:8002/</code> to mirror your Phase 1 (8000) / Phase 2 (8001) setup.</p>
+  </div>
+</body>
+</html>

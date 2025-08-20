@@ -1,0 +1,13 @@
+{
+  "rpcUrl": "https://YOUR_RPC_PROVIDER_URL_HERE",
+  "phase2Address": "0xYOUR_CONTRACT_ADDRESS_HERE",
+  "defaultModelId": "",
+  "fromBlock": 0,
+  "toBlock": "latest",
+  "abiUrl": "abi/ModelTrainingAndInference.json",
+  "ipfsGateways": [
+    "https://gateway.pinata.cloud/ipfs/",
+    "https://ipfs.io/ipfs/",
+    "https://dweb.link/ipfs/"
+  ]
+}

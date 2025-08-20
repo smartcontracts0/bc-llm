@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Phase-2 Viewer — Model → Runs → Inference/XAI</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.min.js"></script>
+<style>
+  :root { --bg:#0b0d10; --fg:#e8eef4; --muted:#a5b3c2; --card:#11151a; --accent:#5ac8fa; --bad:#ff6b6b; --good:#2dd4bf; }
+  body { margin:0; font:15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background:var(--bg); color:var(--fg); }
+  header { padding:18px 22px; border-bottom:1px solid #1c232b; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { margin:0; font-size:18px; font-weight:600; letter-spacing:0.2px; }
+  main { max-width:1100px; margin:24px auto; padding:0 16px 60px; }
+  .grid { display:grid; gap:16px; grid-template-columns: repeat(12, 1fr); }
+  .card { grid-column: span 12; background:var(--card); border:1px solid #1a2027; border-radius:16px; padding:16px; box-shadow:0 6px 24px rgba(0,0,0,.25); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > * { flex:1 1 220px; }
+  input, select, button, textarea {
+    background:#0e1319; color:var(--fg); border:1px solid #243140; border-radius:10px; padding:10px 12px; outline:none;
+  }
+  input::placeholder, textarea::placeholder { color:#6d7a8a; }
+  button { cursor:pointer; background:#15202b; border-color:#2b3b4d; }
+  button.primary { background:var(--accent); color:#001018; border:none; font-weight:600; }
+  button:disabled { opacity:.6; cursor:not-allowed; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { padding:8px 10px; border-bottom:1px solid #1a2027; font-size:13px; word-break:break-all; }
+  th { text-align:left; color:var(--muted); font-weight:600; }
+  code { background:#0c1116; padding:2px 6px; border-radius:6px; border:1px solid #1a2027; }
+  .ok { color:var(--good); font-weight:600; }
+  .bad { color:var(--bad); font-weight:600; }
+  .pill { display:inline-block; padding:2px 6px; border-radius:999px; font-size:12px; border:1px solid #223043; color:#a9b7c6; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+  small.mono { color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Phase-2 Viewer</h1>
+  <div><span class="pill">read-only</span></div>
+</header>
+
+<main class="grid">
+  <!-- CONFIG -->
+  <section class="card">
+    <h3>Connect</h3>
+    <div class="row">
+      <input id="rpc" placeholder="RPC URL (Sepolia)" />
+      <input id="addr" placeholder="Phase-2 contract address (0x…)" />
+      <input id="modelId" placeholder="ModelId bytes32 (0x…)" />
+      <input id="fromBlock" placeholder="From block (optional)" />
+      <input id="toBlock" placeholder="To block or 'latest' (optional)" />
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnLoad" class="primary">Load model, runs & batches</button>
+    </div>
+    <div id="status" class="mono" style="margin-top:8px; color:var(--muted);"></div>
+  </section>
+
+  <!-- MODEL -->
+  <section class="card">
+    <h3>ModelCreated</h3>
+    <div id="modelInfo" class="mono" style="white-space:pre-wrap; color:var(--muted);">No data yet.</div>
+  </section>
+
+  <!-- RUNS -->
+  <section class="card">
+    <h3>Runs</h3>
+    <div style="overflow:auto">
+      <table id="runsTbl">
+        <thead><tr>
+          <th>runId</th><th>configHash</th><th>weightsHash</th><th>metricsHash</th><th>artifactsCID</th><th>tx</th><th>block</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- BATCHES -->
+  <section class="card">
+    <h3>Inference Batches</h3>
+    <div style="overflow:auto">
+      <table id="batchesTbl">
+        <thead><tr>
+          <th>#</th><th>batchRoot</th><th>count</th><th>batchCID</th><th>tx</th><th>block</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- VERIFY -->
+  <section class="card">
+    <h3>Verify membership (manifest → Merkle → on-chain)</h3>
+    <div class="row">
+      <select id="batchSelect"><option value="">— choose batch —</option></select>
+      <input id="cid" placeholder="Or paste manifest CID (Qm…/bafy…)" />
+      <button id="btnFetch">Fetch manifest & compare root</button>
+    </div>
+    <div id="compare" class="mono" style="margin-top:10px; color:var(--muted);"></div>
+
+    <h4 style="margin-top:18px">Pick row or use hashes</h4>
+    <div class="row">
+      <input id="rowIndex" placeholder="Row index (0..count-1)" />
+      <input id="ih" placeholder="inputHash 0x…" />
+      <input id="oh" placeholder="outputHash 0x…" />
+      <input id="xh" placeholder="xaiHash 0x…" />
+      <button id="btnProof">Build proof & verify on-chain</button>
+    </div>
+    <div id="verifyOut" class="mono" style="margin-top:10px; color:var(--muted);"></div>
+  </section>
+</main>
+
+<script>
+(async function () {
+  const $ = (id) => document.getElementById(id);
+  const status = (msg) => { $("status").textContent = msg; };
+
+  // --------- Minimal ABI (events + verify) ----------
+  // Matches your deployed Phase-2 contract and notebook usage.
+  const PHASE2_ABI = [
+    // events
+    "event ModelCreated(bytes32 indexed modelId, address indexed owner, bytes32 indexed datasetId, uint256 datasetVersion, bytes32 datasetRoot, bytes32 codeHash, bytes32 archHash, string modelURI)",
+    "event TrainingStarted(uint256 indexed runId, bytes32 indexed modelId, bytes32 configHash)",
+    "event TrainingFinalized(uint256 indexed runId, bytes32 indexed modelId, bytes32 weightsHash, bytes32 metricsHash, string artifactsCID)",
+    "event InferenceLogged(bytes32 indexed modelId, bytes32 inputHash, bytes32 outputHash, bytes32 xaiHash, string xaiCID)",
+    "event InferenceBatchCommitted(bytes32 indexed modelId, bytes32 indexed batchRoot, uint256 count, string batchCID)",
+    // read-only verify
+    "function verifyBatchMembership(bytes32 inputHash, bytes32 outputHash, bytes32 xaiHash, bytes32[] proof, bytes32 root) pure returns (bool)"
+  ];
+
+  // topic0 signatures
+  const TOPIC = {
+    ModelCreated: ethers.id("ModelCreated(bytes32,address,bytes32,uint256,bytes32,bytes32,bytes32,string)"),
+    TrainingStarted: ethers.id("TrainingStarted(uint256,bytes32,bytes32)"),
+    TrainingFinalized: ethers.id("TrainingFinalized(uint256,bytes32,bytes32,bytes32,string)"),
+    InferenceLogged: ethers.id("InferenceLogged(bytes32,bytes32,bytes32,bytes32,string)"),
+    InferenceBatchCommitted: ethers.id("InferenceBatchCommitted(bytes32,bytes32,uint256,string)")
+  };
+
+  // --------- Helpers ----------
+  const hexNo0x = (h) => h?.startsWith("0x") ? h.slice(2) : h || "";
+  const b32 = (h) => (h && h.length === 66 && h.startsWith("0x")) ? h : ("0x" + hexNo0x(h).padStart(64, "0"));
+  const concat = ethers.concat;
+
+  function leaf(inputHash, outputHash, xaiHash) {
+    return ethers.keccak256(concat([inputHash, outputHash, xaiHash]));
+  }
+  function parentSorted(a, b) {
+    // bytes32 strings "0x…": compare as BigInt
+    return (BigInt(a) < BigInt(b))
+      ? ethers.keccak256(concat([a, b]))
+      : ethers.keccak256(concat([b, a]));
+  }
+  function merkleRoot(leaves) {
+    if (!leaves.length) throw new Error("no leaves");
+    let level = leaves.slice();
+    while (level.length > 1) {
+      if (level.length % 2 === 1) level.push(level[level.length - 1]);
+      const nxt = [];
+      for (let i = 0; i < level.length; i += 2) {
+        nxt.push(parentSorted(level[i], level[i + 1]));
+      }
+      level = nxt;
+    }
+    return level[0];
+  }
+  function merkleProof(leaves, idx) {
+    if (!(idx >= 0 && idx < leaves.length)) throw new Error("idx out of range");
+    let proof = [], level = leaves.slice(), i = idx;
+    while (level.length > 1) {
+      if (level.length % 2 === 1) level.push(level[level.length - 1]);
+      const nxt = [];
+      for (let p = 0; p < level.length; p += 2) {
+        const L = level[p], R = level[p + 1];
+        if (p === i || p + 1 === i) {
+          proof.push(p === i ? R : L);
+          i = nxt.length;
+        }
+        nxt.push(parentSorted(L, R));
+      }
+      level = nxt;
+    }
+    return proof;
+  }
+
+  async function getLogsPaged(provider, filter, fromBlock, toBlock) {
+    // paginate to avoid provider limits
+    const CHUNK = 3500;
+    const latest = toBlock === "latest" ? await provider.getBlockNumber() : Number(toBlock);
+    let from = Number(fromBlock ?? 0);
+    const out = [];
+    while (from <= latest) {
+      const to = Math.min(from + CHUNK - 1, latest);
+      const f = { ...filter, fromBlock: from, toBlock: to };
+      try {
+        const logs = await provider.getLogs(f);
+        out.push(...logs);
+      } catch (e) {
+        console.warn("getLogs error @", from, to, e);
+      }
+      from = to + 1;
+    }
+    return out;
+  }
+
+  async function fetchJSONFromCID(cid) {
+    const gateways = [
+      "https://gateway.pinata.cloud/ipfs/",
+      "https://ipfs.io/ipfs/",
+      "https://dweb.link/ipfs/"
+    ];
+    const c = (cid || "").replace(/^ipfs:\/\//, "");
+    for (const g of gateways) {
+      try {
+        const r = await fetch(g + c, { headers: { "Accept": "application/json" } });
+        if (r.ok) return await r.json();
+      } catch {}
+    }
+    throw new Error("Failed to fetch manifest " + cid);
+  }
+
+  function setTable(tbody, rows) {
+    tbody.innerHTML = rows.map(cells => `<tr>${cells.map(td => `<td>${td}</td>`).join("")}</tr>`).join("");
+  }
+
+  // --------- UI wiring ----------
+  $("btnLoad").onclick = async () => {
+    try {
+      $("compare").textContent = "";
+      $("verifyOut").textContent = "";
+      setTable($("runsTbl").querySelector("tbody"), []);
+      setTable($("batchesTbl").querySelector("tbody"), []);
+      $("batchSelect").innerHTML = `<option value="">— choose batch —</option>`;
+      $("modelInfo").textContent = "Loading…";
+      status("Connecting…");
+
+      const rpc = $("rpc").value.trim();
+      const addr = $("addr").value.trim();
+      const modelId = b32($("modelId").value.trim());
+      const fromBlock = $("fromBlock").value.trim() || "0";
+      const toBlock = $("toBlock").value.trim() || "latest";
+
+      const provider = new ethers.JsonRpcProvider(rpc);
+      const contract = new ethers.Contract(addr, PHASE2_ABI, provider);
+
+      // MODEL
+      status("Loading ModelCreated…");
+      const modelLogs = await getLogsPaged(provider, {
+        address: addr,
+        topics: [TOPIC.ModelCreated, modelId]
+      }, fromBlock, toBlock);
+
+      if (!modelLogs.length) {
+        $("modelInfo").textContent = "No ModelCreated for this modelId in the selected range.";
+      } else {
+        // decode last one
+        const iFace = new ethers.Interface(PHASE2_ABI);
+        const lg = modelLogs[modelLogs.length - 1];
+        const ev = iFace.parseLog(lg);
+        const a = ev?.args;
+        $("modelInfo").textContent =
+`modelId      : ${a.modelId}
+owner        : ${a.owner}
+datasetId    : ${a.datasetId}
+datasetVersion: ${a.datasetVersion}
+datasetRoot  : ${a.datasetRoot}
+codeHash     : ${a.codeHash}
+archHash     : ${a.archHash}
+modelURI     : ${a.modelURI}
+tx           : ${lg.transactionHash}
+block        : ${lg.blockNumber}`;
+      }
+
+      // RUNS: TrainingStarted + TrainingFinalized
+      status("Loading runs…");
+      const tStart = await getLogsPaged(provider, {
+        address: addr,
+        topics: [TOPIC.TrainingStarted, null, modelId]
+      }, fromBlock, toBlock);
+      const tFinal = await getLogsPaged(provider, {
+        address: addr,
+        topics: [TOPIC.TrainingFinalized, null, modelId]
+      }, fromBlock, toBlock);
+
+      const iFace = new ethers.Interface(PHASE2_ABI);
+      const runMap = new Map();
+      for (const lg of tStart) {
+        try {
+          const ev = iFace.parseLog(lg);
+          runMap.set(ev.args.runId.toString(), {
+            runId: ev.args.runId.toString(),
+            configHash: ev.args.configHash,
+            weightsHash: "",
+            metricsHash: "",
+            artifactsCID: "",
+            tx: lg.transactionHash,
+            block: lg.blockNumber
+          });
+        } catch {}
+      }
+      for (const lg of tFinal) {
+        try {
+          const ev = iFace.parseLog(lg);
+          const k = ev.args.runId.toString();
+          const row = runMap.get(k) || { runId: k, configHash: "", tx: lg.transactionHash, block: lg.blockNumber };
+          row.weightsHash = ev.args.weightsHash;
+          row.metricsHash = ev.args.metricsHash;
+          row.artifactsCID = ev.args.artifactsCID;
+          row.tx = lg.transactionHash;
+          row.block = lg.blockNumber;
+          runMap.set(k, row);
+        } catch {}
+      }
+      const runRows = [...runMap.values()].sort((a,b)=>Number(a.runId)-Number(b.runId))
+        .map(r => [r.runId, r.configHash, r.weightsHash, r.metricsHash, r.artifactsCID, `<small class="mono">${r.tx}</small>`, r.block]);
+      setTable($("runsTbl").querySelector("tbody"), runRows);
+
+      // BATCHES
+      status("Loading batches…");
+      const batchLogs = await getLogsPaged(provider, {
+        address: addr,
+        topics: [TOPIC.InferenceBatchCommitted, modelId]
+      }, fromBlock, toBlock);
+
+      const batches = [];
+      for (let i = 0; i < batchLogs.length; i++) {
+        try {
+          const ev = iFace.parseLog(batchLogs[i]);
+          batches.push({
+            idx: i,
+            batchRoot: ev.args.batchRoot,
+            count: ev.args.count.toString(),
+            batchCID: ev.args.batchCID,
+            tx: batchLogs[i].transactionHash,
+            block: batchLogs[i].blockNumber
+          });
+        } catch {}
+      }
+      const batchRows = batches.map((b,i)=>[
+        i, b.batchRoot, b.count,
+        `<a href="${b.batchCID}" target="_blank" class="mono">${b.batchCID}</a>`,
+        `<small class="mono">${b.tx}</small>`,
+        b.block
+      ]);
+      setTable($("batchesTbl").querySelector("tbody"), batchRows);
+
+      // Fill select
+      batches.forEach((b,i)=>{
+        const opt = document.createElement("option");
+        opt.value = JSON.stringify(b);
+        opt.textContent = `#${i}  root=${b.batchRoot.slice(0,10)}…  count=${b.count}`;
+        $("batchSelect").appendChild(opt);
+      });
+
+      // Save state for verify step
+      window.__P2 = { provider, contract, modelId, batches };
+      status("Ready.");
+    } catch (e) {
+      console.error(e);
+      status("Error: " + (e.message || e));
+    }
+  };
+
+  $("btnFetch").onclick = async () => {
+    try {
+      $("compare").textContent = "Loading manifest…";
+      $("verifyOut").textContent = "";
+
+      const sel = $("batchSelect").value;
+      let chosen = sel ? JSON.parse(sel) : null;
+      let cid = $("cid").value.trim();
+      if (!cid && chosen) cid = chosen.batchCID;
+      if (!cid) throw new Error("Pick a batch or paste a CID");
+
+      const manifest = await fetchJSONFromCID(cid);
+      // expected: { events: [ {inputHash, outputHash, xaiHash, ...}, ... ], count: N, ... }
+      const events = manifest.events || [];
+      if (!events.length) throw new Error("Manifest has no events");
+      // Build leaves
+      const leaves = events.map(e => leaf(b32(e.inputHash), b32(e.outputHash), b32(e.xaiHash)));
+      const root = merkleRoot(leaves);
+
+      // Compare to on-chain root (if we have a selected batch)
+      let msg = `Manifest rows: ${events.length}\nComputed root: ${root}`;
+      if (chosen) {
+        msg += `\nOn-chain root: ${chosen.batchRoot}`;
+        msg += `\nMatch: ${root.toLowerCase() === chosen.batchRoot.toLowerCase() ? "✅" : "❌"}`;
+      }
+      $("compare").textContent = msg;
+
+      // store for proof step
+      window.__P2.manifest = manifest;
+      window.__P2.events = events;
+      window.__P2.leaves = leaves;
+      window.__P2.root = root;
+    } catch (e) {
+      $("compare").textContent = "Error: " + (e.message || e);
+    }
+  };
+
+  $("btnProof").onclick = async () => {
+    try {
+      $("verifyOut").textContent = "";
+      const S = window.__P2 || {};
+      if (!S.contract || !S.events || !S.leaves || !S.root) throw new Error("Load & fetch manifest first.");
+
+      // choose a row
+      let idxTxt = $("rowIndex").value.trim();
+      let idx = idxTxt ? Number(idxTxt) : null;
+
+      let ih = $("ih").value.trim(),
+          oh = $("oh").value.trim(),
+          xh = $("xh").value.trim();
+
+      if (idx === null || isNaN(idx)) {
+        // derive index by hashes if provided
+        if (!(ih && oh && xh)) throw new Error("Provide row index or all three hashes.");
+        ih = b32(ih); oh = b32(oh); xh = b32(xh);
+        const target = ethers.keccak256(ethers.concat([ih, oh, xh]));
+        idx = S.leaves.findIndex(L => L.toLowerCase() === target.toLowerCase());
+        if (idx < 0) throw new Error("Leaf not found in manifest.");
+      } else {
+        if (!(idx >= 0 && idx < S.events.length)) throw new Error("Row index out of range.");
+        ih = b32(S.events[idx].inputHash);
+        oh = b32(S.events[idx].outputHash);
+        xh = b32(S.events[idx].xaiHash);
+      }
+
+      const proof = merkleProof(S.leaves, idx);
+      const ok = await S.contract.verifyBatchMembership(ih, oh, xh, proof, S.root);
+      $("verifyOut").innerHTML =
+        `Row ${idx} — verifyBatchMembership → ` + (ok ? `<span class="ok">✅ true</span>` : `<span class="bad">❌ false</span>`) +
+        `\nproof length: ${proof.length}`;
+    } catch (e) {
+      $("verifyOut").textContent = "Error: " + (e.message || e);
+    }
+  };
+})();
+</script>
+</body>
+</html>

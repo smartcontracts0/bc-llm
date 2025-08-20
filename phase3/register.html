@@ -1,0 +1,448 @@
+<!-- register.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Phase 3 — Console (Sign, Publisher, Store, Revoke)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{ --page-width:1040px; --gap:14px; --radius:14px; --border:#e5e7eb; --muted:#6b7280; --ink:#111827; }
+    *{ box-sizing:border-box; }
+    body{ font-family: system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; line-height:1.45; margin:18px auto; padding:0 18px; max-width:var(--page-width); background:#fff; }
+    h1{ margin:0 0 14px; font-size:1.35rem; }
+    h3{ margin:0 0 10px; font-size:1.05rem; }
+    .card{ border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:14px 0; box-shadow:0 1px 2px rgba(0,0,0,.04); background:#fff; }
+    label{ display:block; font-size:.92rem; color:#374151; margin:0 0 6px; }
+    input, textarea, select, button{ font:inherit; width:100%; padding:11px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; }
+    textarea{ min-height:96px; resize:vertical; }
+    .mono, code{ font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .grid2{ display:grid; gap:14px; grid-template-columns:1fr; }
+    @media (min-width:880px){ .grid2{ grid-template-columns:1fr 1fr; } }
+    .row{ display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+    .row > *{ flex:1 1 220px; }
+    button{ background:#111827; color:#fff; cursor:pointer; border:1px solid #111827; padding:12px 16px; margin:8px 0; border-radius:12px; }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+    .muted{ color:#6b7280; }
+    .warn{ color:#b91c1c; font-weight:600; }
+    .nav a{ margin-right:12px; }
+    pre{ background:#f9fafb; padding:10px 12px; border-radius:10px; overflow:auto; border:1px solid #e5e7eb; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="index.html">← Home</a>
+    <a href="verify.html">Verify</a>
+  </div>
+
+  <h1>Phase 3 — Console</h1>
+
+  <div class="card">
+    <div class="grid2">
+      <div><label>RPC</label><input id="rpc" value=""></div>
+      <div><label>Phase 3 Contract</label><input id="addr" placeholder="0x..."></div>
+    </div>
+    <div class="row">
+      <button id="btnConnect">Connect MetaMask</button>
+      <button id="btnReloadCfg" style="background:#374151;border-color:#374151;">Reload config.json</button>
+      <span id="who" class="muted"></span>
+    </div>
+    <div id="netWarn" class="muted"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Set Publisher (owner-only)</h3>
+    <div class="grid2">
+      <div><label>modelId (bytes32)</label><input id="p_modelId" class="mono" placeholder="0x..."></div>
+      <div><label>publisher (address)</label><input id="p_addr" class="mono" placeholder="0x..."></div>
+      <div><label>allowed</label>
+        <select id="p_allowed"><option value="true">true</option><option value="false">false</option></select>
+      </div>
+    </div>
+    <div class="row">
+      <button id="btnSetPublisher">setPublisher(modelId, publisher, allowed)</button>
+      <span id="statusPub" class="muted"></span>
+    </div>
+  </div>
+
+  <!-- Publisher time window & revoke -->
+  <div class="card">
+    <h3 style="margin-top:0">Publisher Window / Revoke (owner-only)</h3>
+    <div class="grid2">
+      <div><label>modelId (bytes32)</label><input id="w_modelId" class="mono" placeholder="0x..."></div>
+      <div><label>publisher (address)</label><input id="w_addr" class="mono" placeholder="0x..."></div>
+      <div><label>allowed</label>
+        <select id="w_allowed"><option value="true">true</option><option value="false">false</option></select>
+      </div>
+      <div><label>start (unix seconds, inclusive)</label><input id="w_start" type="number" min="0" step="1" value="0"></div>
+      <div><label>end (unix seconds, inclusive; 0 for “no limit”)</label><input id="w_end" type="number" min="0" step="1" value="0"></div>
+    </div>
+    <div class="row">
+      <button id="btnSetWindow">setPublisherWindow(modelId, publisher, allowed, start, end)</button>
+      <button id="btnRevokePublisher" style="background:#7f1d1d;border-color:#7f1d1d;">revokePublisher(modelId, publisher)</button>
+      <span id="statusWin" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Sign EIP-712 Receipt (downloads & optional IPFS upload)</h3>
+    <div class="grid2">
+      <div><label>modelId</label><input id="s_modelId" class="mono" placeholder="0x..."></div>
+      <div><label>weightsHash</label><input id="s_weights" class="mono" placeholder="0x..."></div>
+      <div><label>batchRoot</label><input id="s_root" class="mono" placeholder="0x..."></div>
+      <div><label>batchCID</label><input id="s_cid" class="mono" placeholder="ipfs://..."></div>
+      <div><label>txHash</label><input id="s_tx" class="mono" placeholder="0x..."></div>
+      <div><label>index</label><input id="s_idx" type="number" min="0" step="1" value="0"></div>
+      <div><label>leaf</label><input id="s_leaf" class="mono" placeholder="0x..."></div>
+      <div><label>publisher (auto = connected account)</label><input id="s_pub" class="mono" readonly></div>
+      <div><label>timestamp (uint64)</label><input id="s_ts" type="number" min="0" step="1" value="0"></div>
+    </div>
+    <div class="row">
+      <button id="btnSign">Sign & Download receipt_bundle.json</button>
+      <span id="statusSign" class="muted"></span>
+    </div>
+    <div class="grid2">
+      <div><label>IPFS proxy (optional)</label><input id="ipfsUrl" value=""></div>
+      <div><label>Upload signed receipt_bundle.json</label><input id="fileUp" type="file" accept=".json,application/json"></div>
+    </div>
+    <div class="row">
+      <button id="btnUpload">Upload to IPFS</button>
+      <span id="statusIpfs" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Store Content Hash (attest output text)</h3>
+    <div class="grid2">
+      <div><label>modelId (bytes32)</label><input id="c_modelId" class="mono" placeholder="0x..."></div>
+      <div><label>batchRoot (bytes32, optional)</label><input id="c_root" class="mono" placeholder="0x0000..."></div>
+      <div><label>xaiCID (optional)</label><input id="c_xai" class="mono" placeholder="ipfs://..."></div>
+    </div>
+    <div>
+      <label>Output text (will be keccak256-UTF8)</label>
+      <textarea id="c_text" class="mono" placeholder="paste exact LLM output here…"></textarea>
+    </div>
+    <div class="row">
+      <button id="btnStore">storeContentHash(modelId, contentHash, batchRoot, xaiCID)</button>
+      <span id="statusStore" class="muted"></span>
+    </div>
+  </div>
+
+  <!-- Revocation tools -->
+  <div class="card">
+    <h3 style="margin-top:0">Revocation Tools (owner-only)</h3>
+    <div class="grid2">
+      <div><label>modelId (bytes32)</label><input id="rv_modelId" class="mono" placeholder="0x..."></div>
+      <div><label>leaf (bytes32)</label><input id="rv_leaf" class="mono" placeholder="0x..."></div>
+      <div><label>batchRoot (bytes32)</label><input id="rv_root" class="mono" placeholder="0x..."></div>
+    </div>
+    <div class="row">
+      <button id="btnLeafRevoke" style="background:#7f1d1d;border-color:#7f1d1d;">revokeLeaf(modelId, leaf)</button>
+      <button id="btnLeafUnrevoke" style="background:#374151;border-color:#374151;">unRevokeLeaf(modelId, leaf)</button>
+      <button id="btnRootRevoke" style="background:#7f1d1d;border-color:#7f1d1d;">revokeBatchRoot(modelId, root)</button>
+      <button id="btnRootUnrevoke" style="background:#374151;border-color:#374151;">unRevokeBatchRoot(modelId, root)</button>
+      <span id="statusRev" class="muted"></span>
+    </div>
+
+    <h4>Leaf helper</h4>
+    <div class="grid2">
+      <div><label>inputHash (bytes32)</label><input id="lh_ih" class="mono" placeholder="0x..."></div>
+      <div><label>outputHash (bytes32)</label><input id="lh_oh" class="mono" placeholder="0x..."></div>
+      <div><label>xaiHash (bytes32)</label><input id="lh_xh" class="mono" placeholder="0x..."></div>
+      <div><label>computed leaf</label><input id="lh_leaf" class="mono" readonly></div>
+    </div>
+    <div class="row">
+      <button id="btnLeafCompute">Compute leaf</button>
+      <span class="muted">Use above to fill “leaf” quickly.</span>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
+  <script>
+    const $ = (id)=>document.getElementById(id);
+    const isB32 = (s)=>/^0x[0-9a-fA-F]{64}$/.test((s||"").trim());
+    const isAddr = (s)=>{ try{ ethers.getAddress((s||"").trim()); return true; }catch{ return false; } };
+    const zero32 = "0x" + "0".repeat(64);
+    const normIpfs = (s)=>{ s=(s||"").trim(); if(!s) return ""; s=s.replace(/^ipfs:\/\/ipfs:\/\//,"ipfs://"); return s.startsWith("ipfs://")?s:("ipfs://"+s); };
+
+    // strict helpers
+    const mustB32 = (s, label="value") => {
+      s=(s||"").trim();
+      if(!s) throw new Error(`${label} required`);
+      if(!s.startsWith("0x")) s="0x"+s;
+      if(!/^0x[0-9a-fA-F]{64}$/.test(s)) throw new Error(`${label} must be bytes32`);
+      return s;
+    };
+    const optB32 = (s, def=zero32) => {
+      s=(s||"").trim();
+      if(!s) return def;
+      if(!s.startsWith("0x")) s="0x"+s;
+      if(!/^0x[0-9a-fA-F]{64}$/.test(s)) throw new Error(`Invalid bytes32: ${s}`);
+      return s;
+    };
+
+    const CONFIG_URL = "config.json";
+    let CFG = null;
+    let ABI = null;
+    let provider, signer, contract;
+
+    async function loadConfig(apply=true){
+      const res = await fetch(CONFIG_URL, {cache:"no-cache"});
+      CFG = await res.json();
+      if(apply) applyConfig(CFG);
+    }
+    async function loadABI(c){
+      if (ABI) return;
+      if (c.abiUrl) {
+        const r = await fetch(c.abiUrl, { cache: "no-cache" });
+        ABI = await r.json();
+      } else if (c.abiInline) {
+        ABI = c.abiInline;
+      } else { throw new Error("ABI not provided. Add `abiUrl` (or `abiInline`) in config.json"); }
+    }
+    function applyConfig(c){
+      if(c.rpcUrl) $("rpc").value = c.rpcUrl;
+      if(c.phase3?.contract) $("addr").value = c.phase3.contract;
+      if(c.ipfs?.proxyUrl) $("ipfsUrl").value = c.ipfs.proxyUrl;
+
+      if(c.phase2?.modelId){
+        $("p_modelId").value = c.phase2.modelId;
+        $("s_modelId").value = c.phase2.modelId;
+        $("c_modelId").value = c.phase2.modelId;
+        $("w_modelId").value = c.phase2.modelId;
+        $("rv_modelId").value = c.phase2.modelId;
+      }
+      if(c.publisher?.address){
+        $("p_addr").value = c.publisher.address;
+        $("w_addr").value = c.publisher.address;
+      }
+
+      if(c.phase2?.weightsHash) $("s_weights").value = c.phase2.weightsHash;
+      if(c.batch?.root){
+        $("s_root").value = c.batch.root;
+        $("c_root").value = c.batch.root;
+        $("rv_root").value = c.batch.root;
+      }
+      if(c.batch?.cid) $("s_cid").value = normIpfs(c.batch.cid);
+      if(c.batch?.txHash) $("s_tx").value = c.batch.txHash;
+      if(typeof c.batch?.index === "number") $("s_idx").value = String(c.batch.index);
+      if(c.batch?.leaf) $("s_leaf").value = c.batch.leaf;
+
+      if(!$("s_ts").value || $("s_ts").value === "0"){
+        $("s_ts").value = String(Math.floor(Date.now()/1000));
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", async ()=>{
+      try { await loadConfig(true); } catch(e){ console.warn("config.json load failed:", e); }
+      try { await loadABI(CFG); } catch(e){ console.warn("ABI load failed:", e); }
+    });
+
+    $("btnReloadCfg").onclick = async ()=>{
+      $("who").textContent = "Reloading config.json…";
+      try { await loadConfig(true); $("who").textContent = "Config applied."; }
+      catch(e){ $("who").textContent = "Config reload error: " + (e.message||e); }
+    };
+
+    $("btnConnect").onclick = async ()=>{
+      try{
+        if(!window.ethereum){ $("who").textContent="MetaMask not found"; return; }
+        await window.ethereum.request({ method:"eth_requestAccounts" });
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        const addr = await signer.getAddress();
+        $("who").textContent = "Connected: " + addr;
+        const existing = $("s_pub").value.trim();
+        $("s_pub").value = existing || addr;
+
+        const net = await provider.getNetwork();
+        if(CFG?.phase3?.chainId && Number(net.chainId) !== Number(CFG.phase3.chainId)){
+          $("netWarn").innerHTML = "⚠ ChainId mismatch. MetaMask="+Number(net.chainId)+" vs config="+Number(CFG.phase3.chainId);
+          $("netWarn").className = "warn";
+        } else {
+          $("netWarn").textContent = "";
+          $("netWarn").className = "muted";
+        }
+
+        if (!ABI) await loadABI(CFG);
+        const caddr = $("addr").value.trim();
+        if(!ethers.isAddress(caddr)){ $("who").textContent += " — invalid contract address"; return; }
+        contract = new ethers.Contract(caddr, ABI, signer);
+      }catch(e){
+        $("who").textContent = "Error: " + (e.message||e);
+      }
+    };
+
+    $("btnSetPublisher").onclick = async ()=>{
+      $("btnSetPublisher").disabled=true; $("statusPub").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const mid = mustB32($("p_modelId").value, "modelId");
+        const pub = $("p_addr").value.trim();
+        const allowed = $("p_allowed").value === "true";
+        if(!isAddr(pub)) throw new Error("publisher must be a valid address");
+        const tx = await contract.setPublisher(mid, pub, allowed);
+        await tx.wait();
+        $("statusPub").textContent="Done ✅ Tx: " + tx.hash;
+      }catch(e){
+        $("statusPub").textContent = "Error: " + (e.message||e);
+      }finally{ $("btnSetPublisher").disabled=false; }
+    };
+
+    // Window + revoke publisher
+    $("btnSetWindow").onclick = async ()=>{
+      $("btnSetWindow").disabled=true; $("statusWin").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const mid = mustB32($("w_modelId").value, "modelId");
+        const pub = $("w_addr").value.trim();
+        const allowed = $("w_allowed").value === "true";
+        if(!isAddr(pub)) throw new Error("publisher must be a valid address");
+        const start = BigInt(parseInt($("w_start").value,10) || 0);
+        const end = BigInt(parseInt($("w_end").value,10) || 0); // 0 = no limit
+        const tx = await contract.setPublisherWindow(mid, pub, allowed, start, end);
+        await tx.wait();
+        $("statusWin").textContent="Done ✅ Tx: " + tx.hash;
+      }catch(e){ $("statusWin").textContent="Error: "+(e.message||e); }
+      finally{ $("btnSetWindow").disabled=false; }
+    };
+    $("btnRevokePublisher").onclick = async ()=>{
+      $("btnRevokePublisher").disabled=true; $("statusWin").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const mid = mustB32($("w_modelId").value, "modelId");
+        const pub = $("w_addr").value.trim();
+        if(!isAddr(pub)) throw new Error("publisher must be a valid address");
+        const tx = await contract.revokePublisher(mid, pub);
+        await tx.wait();
+        $("statusWin").textContent="Revoked ✅ Tx: " + tx.hash;
+      }catch(e){ $("statusWin").textContent="Error: "+(e.message||e); }
+      finally{ $("btnRevokePublisher").disabled=false; }
+    };
+
+    async function signTypedReceipt(value, verifying){
+      const net = await provider.getNetwork();
+      const name = (CFG?.phase3?.eip712?.name) || "Phase3Receipt";
+      const version = (CFG?.phase3?.eip712?.version) || "1";
+      const domain = { name, version, chainId:Number(net.chainId), verifyingContract: verifying };
+      const types = { Receipt: [
+        {name:"modelId",type:"bytes32"},{name:"weightsHash",type:"bytes32"},{name:"batchRoot",type:"bytes32"},
+        {name:"batchCID",type:"string"},{name:"txHash",type:"bytes32"},{name:"index",type:"uint256"},
+        {name:"leaf",type:"bytes32"},{name:"publisher",type:"address"},{name:"timestamp",type:"uint64"} ] };
+      return await signer.signTypedData(domain, types, value);
+    }
+    $("btnSign").onclick = async ()=>{
+      $("btnSign").disabled=true; $("statusSign").textContent="Signing…";
+      try{
+        if(!provider || !signer) throw new Error("Connect MetaMask first.");
+        if (!ABI) await loadABI(CFG);
+        const verifying = $("addr").value.trim();
+        if(!ethers.isAddress(verifying)) throw new Error("Phase 3 contract address required.");
+        const value = {
+          modelId: mustB32($("s_modelId").value, "modelId"),
+          weightsHash: optB32($("s_weights").value, zero32),
+          batchRoot: mustB32($("s_root").value, "batchRoot"),
+          batchCID: normIpfs($("s_cid").value),
+          txHash: optB32($("s_tx").value, zero32),
+          index: BigInt(parseInt($("s_idx").value,10)||0),
+          leaf: optB32($("s_leaf").value, zero32),
+          publisher: $("s_pub").value.trim(),
+          timestamp: BigInt(parseInt($("s_ts").value,10)||Math.floor(Date.now()/1000))
+        };
+        if(!isAddr(value.publisher)) throw new Error("publisher must be an address");
+
+        const sig = await signTypedReceipt(value, verifying);
+        $("statusSign").textContent = "Signed ✔";
+        const blob = new Blob([JSON.stringify({ receipt:value, signature:sig }, null, 2)], {type:"application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = "receipt_bundle.json"; a.click();
+        URL.revokeObjectURL(url);
+      }catch(e){ $("statusSign").textContent = "Error: " + (e.message||e); }
+      finally{ $("btnSign").disabled=false; }
+    };
+
+    $("btnUpload").onclick = async ()=>{
+      $("btnUpload").disabled=true; $("statusIpfs").textContent="Uploading…";
+      try{
+        const base = $("ipfsUrl").value.trim().replace(/\/+$/,"");
+        const f = $("fileUp").files?.[0];
+        if(!base) throw new Error("Enter your IPFS proxy base URL (e.g., http://127.0.0.1:8020)");
+        if(!f) throw new Error("Pick the signed receipt_bundle.json first.");
+        const fd = new FormData(); fd.append("file", f, f.name);
+        const r = await fetch(base + "/ipfs/pin_file", { method:"POST", body: fd });
+        if(!r.ok) throw new Error((await r.text())||("HTTP "+r.status));
+        const j = await r.json();
+        $("statusIpfs").textContent = "Pinned ✅ CID: " + (j.cid||"");
+      }catch(e){ $("statusIpfs").textContent = "Error: " + (e.message||e); }
+      finally{ $("btnUpload").disabled=false; }
+    };
+
+    $("btnStore").onclick = async ()=>{
+      $("btnStore").disabled=true; $("statusStore").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const mid = mustB32($("c_modelId").value, "modelId");
+        let root = $("c_root").value.trim();
+        root = root ? optB32(root, zero32) : zero32;
+        const xai  = normIpfs($("c_xai").value);
+        const text = $("c_text").value;
+        if(!text) throw new Error("Paste the output text.");
+        const contentHash = ethers.keccak256(ethers.toUtf8Bytes(text));
+        const tx = await contract.storeContentHash(mid, contentHash, root, xai);
+        await tx.wait();
+        $("statusStore").textContent = "Done ✅ Tx: " + tx.hash + " (contentHash="+contentHash+")";
+      }catch(e){ $("statusStore").textContent = "Error: " + (e.message||e); }
+      finally{ $("btnStore").disabled=false; }
+    };
+
+    // Revocation tools
+    $("btnLeafCompute").onclick = ()=>{
+      try{
+        const ih=$("lh_ih").value.trim(), oh=$("lh_oh").value.trim(), xh=$("lh_xh").value.trim();
+        if(!isB32(ih)||!isB32(oh)||!isB32(xh)) throw new Error("All 3 hashes must be bytes32.");
+        const leaf = ethers.keccak256(ethers.solidityPacked(["bytes32","bytes32","bytes32"], [ih,oh,xh]));
+        $("lh_leaf").value = leaf; $("rv_leaf").value = leaf;
+      }catch(e){ alert(e.message||e); }
+    };
+    $("btnLeafRevoke").onclick = async ()=>{
+      $("btnLeafRevoke").disabled=true; $("statusRev").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const mid=mustB32($("rv_modelId").value,"modelId"), leaf=mustB32($("rv_leaf").value,"leaf");
+        const tx = await contract.revokeLeaf(mid, leaf); await tx.wait();
+        $("statusRev").textContent="Leaf revoked ✅ Tx: "+tx.hash;
+      }catch(e){ $("statusRev").textContent="Error: "+(e.message||e); }
+      finally{ $("btnLeafRevoke").disabled=false; }
+    };
+    $("btnLeafUnrevoke").onclick = async ()=>{
+      $("btnLeafUnrevoke").disabled=true; $("statusRev").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const mid=mustB32($("rv_modelId").value,"modelId"), leaf=mustB32($("rv_leaf").value,"leaf");
+        const tx = await contract.unRevokeLeaf(mid, leaf); await tx.wait();
+        $("statusRev").textContent="Leaf un-revoked ✅ Tx: "+tx.hash;
+      }catch(e){ $("statusRev").textContent="Error: "+(e.message||e); }
+      finally{ $("btnLeafUnrevoke").disabled=false; }
+    };
+    $("btnRootRevoke").onclick = async ()=>{
+      $("btnRootRevoke").disabled=true; $("statusRev").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const mid=mustB32($("rv_modelId").value,"modelId"), root=mustB32($("rv_root").value,"batchRoot");
+        const tx = await contract.revokeBatchRoot(mid, root); await tx.wait();
+        $("statusRev").textContent="Batch root revoked ✅ Tx: "+tx.hash;
+      }catch(e){ $("statusRev").textContent="Error: "+(e.message||e); }
+      finally{ $("btnRootRevoke").disabled=false; }
+    };
+    $("btnRootUnrevoke").onclick = async ()=>{
+      $("btnRootUnrevoke").disabled=true; $("statusRev").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const mid=mustB32($("rv_modelId").value,"modelId"), root=mustB32($("rv_root").value,"batchRoot");
+        const tx = await contract.unRevokeBatchRoot(mid, root); await tx.wait();
+        $("statusRev").textContent="Batch root un-revoked ✅ Tx: "+tx.hash;
+      }catch(e){ $("statusRev").textContent="Error: "+(e.message||e); }
+      finally{ $("btnRootUnrevoke").disabled=false; }
+    };
+  </script>
+</body>
+</html>

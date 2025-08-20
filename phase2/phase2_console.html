@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Phase-2 Console — Create / Runs / Inference / Batch</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{ --page:1100px; --gap:14px; --radius:14px; --border:#e2e8f0; --muted:#64748b; --ink:#0b0d10; --ok:#059669; --bad:#dc2626; }
+    *{ box-sizing:border-box; }
+    body{ font-family: system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; line-height:1.45; margin:18px auto; padding:0 18px; max-width:var(--page); background:#fff; color:var(--ink); }
+    h1{ margin:0 0 14px; font-size:1.35rem; }
+    h3{ margin:0 0 8px; font-size:1.05rem; }
+    .card{ border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:14px 0; box-shadow:0 1px 2px rgba(0,0,0,.04); background:#fff; }
+    label{ display:block; font-size:.92rem; color:#334155; margin:0 0 6px; }
+    input, textarea, select, button{ font:inherit; width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:10px; background:#fff; }
+    textarea{ min-height:90px; resize:vertical; }
+    .mono, code{ font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .grid2{ display:grid; gap:14px; grid-template-columns:1fr; }
+    .grid3{ display:grid; gap:14px; grid-template-columns:1fr; }
+    @media (min-width:900px){ .grid2{ grid-template-columns:1fr 1fr; } .grid3{ grid-template-columns:1fr 1fr 1fr; } }
+    .row{ display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+    .row > *{ flex:1 1 220px; }
+    button{ background:#111827; color:#fff; cursor:pointer; border:1px solid #111827; padding:12px 16px; margin:8px 0; border-radius:12px; }
+    button.alt{ background:#334155; border-color:#334155; }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+    .muted{ color:#64748b; }
+    .ok{ color:var(--ok); font-weight:600; }
+    .bad{ color:var(--bad); font-weight:600; }
+    .pill{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border); color:var(--muted); }
+    .nav a{ margin-right:12px; }
+    .hint{ font-size:.85rem; color:#475569; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="phase2_viewer.html">← Viewer</a>
+  </div>
+  <h1>Phase-2 Console</h1>
+
+  <!-- Connect -->
+  <div class="card">
+    <h3 style="margin-top:0">Connect</h3>
+    <div class="grid2">
+      <div><label>RPC (read-only fallback)</label><input id="rpc" placeholder="(optional) JSON-RPC URL"/></div>
+      <div><label>Phase-2 contract</label><input id="addr" class="mono" placeholder="0x..."/></div>
+    </div>
+    <div class="row">
+      <button id="btnConnect">Connect MetaMask</button>
+      <button id="btnReloadCfg" class="alt">Reload config.json</button>
+      <span id="who" class="muted"></span>
+    </div>
+    <div id="netWarn" class="muted"></div>
+  </div>
+
+  <!-- Create model -->
+  <div class="card">
+    <h3 style="margin-top:0">Create Model</h3>
+    <div class="hint">Use either “By datasetId” or “By dataset name”. Leave <code>modelId</code> blank (or 0x00..00) to auto-generate.</div>
+    <div class="grid2">
+      <div><label>modelId (bytes32, optional)</label><input id="m_modelId" class="mono" placeholder="0x00... (auto)"></div>
+      <div><label>datasetVersion (uint)</label><input id="m_dsVer" type="number" min="1" step="1" value="1"></div>
+      <div><label>datasetId (bytes32)</label><input id="m_dsId" class="mono" placeholder="0x..."></div>
+      <div><label>datasetName (string)</label><input id="m_dsName" placeholder="e.g., MIMIC-IV-Demo-v2.2"></div>
+      <div><label>codeHash (bytes32, optional)</label><input id="m_code" class="mono" placeholder="0x00..."></div>
+      <div><label>archHash (bytes32, optional)</label><input id="m_arch" class="mono" placeholder="0x00..."></div>
+      <div><label>modelURI (ipfs://...)</label><input id="m_uri" class="mono" placeholder="ipfs://..."></div>
+      <div><label>trainingConfigHash (bytes32)</label><input id="m_cfg" class="mono" placeholder="0x..."></div>
+      <div><label>alsoAnchor</label>
+        <select id="m_anchor"><option value="true">true</option><option value="false">false</option></select>
+      </div>
+    </div>
+    <div class="row">
+      <button id="btnCreateById">createModel(…)</button>
+      <button id="btnCreateByName">createModelByName(…)</button>
+      <span id="statusCreate" class="muted"></span>
+    </div>
+  </div>
+
+  <!-- Run controls -->
+  <div class="card">
+    <h3 style="margin-top:0">Training Run</h3>
+    <div class="grid2">
+      <div><label>modelId</label><input id="r_modelId" class="mono" placeholder="0x..."></div>
+      <div><label>configHash (bytes32)</label><input id="r_cfg" class="mono" placeholder="0x..."></div>
+    </div>
+    <div class="row">
+      <button id="btnStart">startTrainingRun(modelId, configHash)</button>
+      <span id="statusStart" class="muted"></span>
+    </div>
+
+    <div class="grid3">
+      <div><label>runId (uint)</label><input id="f_runId" type="number" min="1" step="1" value=""></div>
+      <div><label>weightsHash (bytes32)</label><input id="f_w" class="mono" placeholder="0x..."></div>
+      <div><label>metricsHash (bytes32)</label><input id="f_m" class="mono" placeholder="0x..."></div>
+      <div><label>artifactsCID (ipfs://...)</label><input id="f_cid" class="mono" placeholder="ipfs://..."></div>
+    </div>
+    <div class="row">
+      <button id="btnFinalize">finalizeTrainingRun(runId, weightsHash, metricsHash, artifactsCID)</button>
+      <span id="statusFinal" class="muted"></span>
+    </div>
+  </div>
+
+  <!-- Single inference -->
+  <div class="card">
+    <h3 style="margin-top:0">Log Single Inference (demo-scale)</h3>
+    <div class="grid3">
+      <div><label>modelId</label><input id="i_modelId" class="mono" placeholder="0x..."></div>
+      <div><label>inputHash</label><input id="i_ih" class="mono" placeholder="0x..."></div>
+      <div><label>outputHash</label><input id="i_oh" class="mono" placeholder="0x..."></div>
+      <div><label>xaiHash</label><input id="i_xh" class="mono" placeholder="0x..."></div>
+      <div><label>xaiCID (optional)</label><input id="i_cid" class="mono" placeholder="ipfs://..."></div>
+    </div>
+    <div class="row">
+      <button id="btnLog">logInference(modelId, inputHash, outputHash, xaiHash, xaiCID)</button>
+      <span id="statusLog" class="muted"></span>
+    </div>
+
+    <div class="grid2">
+      <div><label>Hash helper — keccak256(UTF-8)</label><textarea id="txtHash" placeholder="paste text to hash…"></textarea></div>
+      <div>
+        <div class="row">
+          <button id="btnHash">Hash text → below</button>
+          <span id="hashOut" class="muted mono"></span>
+        </div>
+        <div class="row">
+          <button id="btnToInput">Use as inputHash</button>
+          <button id="btnToOutput">Use as outputHash</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch -->
+  <div class="card">
+    <h3 style="margin-top:0">Commit Batch (Merkle root)</h3>
+    <div class="grid3">
+      <div><label>modelId</label><input id="b_modelId" class="mono" placeholder="0x..."></div>
+      <div><label>batchRoot</label><input id="b_root" class="mono" placeholder="0x..."></div>
+      <div><label>count (uint)</label><input id="b_count" type="number" min="1" step="1" value="1"></div>
+      <div><label>batchCID (manifest)</label><input id="b_cid" class="mono" placeholder="ipfs://..."></div>
+    </div>
+    <div class="row">
+      <button id="btnCommit">commitInferenceBatch(modelId, batchRoot, count, batchCID)</button>
+      <span id="statusBatch" class="muted"></span>
+    </div>
+  </div>
+
+  <!-- Verify (quick) -->
+  <div class="card">
+    <h3 style="margin-top:0">Quick Verify (leaf / membership)</h3>
+    <div class="grid3">
+      <div><label>inputHash</label><input id="v_ih" class="mono" placeholder="0x..."></div>
+      <div><label>outputHash</label><input id="v_oh" class="mono" placeholder="0x..."></div>
+      <div><label>xaiHash</label><input id="v_xh" class="mono" placeholder="0x..."></div>
+      <div><label>leaf (auto/local)</label><input id="v_leaf" class="mono" readonly></div>
+      <div><label>root</label><input id="v_root" class="mono" placeholder="0x..."></div>
+      <div><label>proof (comma/space-sep)</label><input id="v_proof" class="mono" placeholder="0x.., 0x.., 0x.."></div>
+    </div>
+    <div class="row">
+      <button id="btnLeafLocal" class="alt">Compute leaf (local)</button>
+      <button id="btnVerifyMem" class="alt">verifyBatchMembership</button>
+      <button id="btnVerifyProof" class="alt">verifyBatchProof</button>
+      <span id="statusVerify" class="muted"></span>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
+  <script>
+    const $ = (id)=>document.getElementById(id);
+    const isB32 = (s)=>/^0x[0-9a-fA-F]{64}$/.test((s||"").trim());
+    const isAddr = (s)=>{ try{ return !!ethers.getAddress((s||"").trim()); }catch{ return false; } };
+    const hexNo0x = (h)=>h?.startsWith("0x") ? h.slice(2) : (h||"");
+    const b32 = (h)=>{ if(!h) return "0x"+"0".repeat(64); const v=(h.startsWith("0x")?h:"0x"+h); return v.length===66?v:("0x"+hexNo0x(v).padStart(64,"0")); };
+    const normCID = (cid)=> (cid||"").replace(/^ipfs:\/\/(ipfs\/)?/i,"");  // handles ipfs://ipfs://…
+    const fromCommaList = (txt)=> (txt||"").split(/[\s,]+/).filter(Boolean);
+
+    // Config loader (same search pattern as viewer)
+    async function loadJSON(paths){ for(const p of paths){ try{ const r=await fetch(p,{cache:"no-store"}); if(r.ok) return await r.json(); }catch{} } return null; }
+    async function loadCfg(){
+      return (await loadJSON([
+        "config/phase2.config.json","/config/phase2.config.json","../config/phase2.config.json",
+        "config/phase2.config.example.json","/config/phase2.config.example.json","../config/phase2.config.example.json",
+      ])) || {};
+    }
+    let CFG={}, ABI=null, provider=null, signer=null, contract=null;
+
+    async function loadABI(c){
+      if (ABI) return ABI;
+      if (c.abiUrl){
+        const r = await fetch(c.abiUrl, {cache:"no-store"});
+        const j = await r.json();
+        ABI = Array.isArray(j)? j : (j.abi||j.ABI||j.default);
+      }
+      if(!ABI){
+        // minimal fallback (functions we call)
+        ABI = [
+          "function createModel(bytes32,bytes32,uint256,bytes32,bytes32,string,bytes32,bool) returns (bytes32)",
+          "function createModelByName(bytes32,string,uint256,bytes32,bytes32,string,bytes32,bool) returns (bytes32)",
+          "event ModelCreated(bytes32 indexed modelId,address indexed owner,bytes32 indexed datasetId,uint256 datasetVersion,bytes32 datasetRoot,bytes32 codeHash,bytes32 archHash,string modelURI)",
+          "function startTrainingRun(bytes32,bytes32) returns (uint256)",
+          "event TrainingStarted(uint256 indexed runId,bytes32 indexed modelId,bytes32 configHash)",
+          "function finalizeTrainingRun(uint256,bytes32,bytes32,string)",
+          "event TrainingFinalized(uint256 indexed runId,bytes32 indexed modelId,bytes32 weightsHash,bytes32 metricsHash,string artifactsCID)",
+          "function logInference(bytes32,bytes32,bytes32,bytes32,string)",
+          "event InferenceLogged(bytes32 indexed modelId,bytes32 inputHash,bytes32 outputHash,bytes32 xaiHash,string xaiCID)",
+          "function commitInferenceBatch(bytes32,bytes32,uint256,string)",
+          "event InferenceBatchCommitted(bytes32 indexed modelId,bytes32 indexed batchRoot,uint256 count,string batchCID)",
+          "function computeInferenceLeaf(bytes32,bytes32,bytes32) pure returns (bytes32)",
+          "function verifyBatchMembership(bytes32,bytes32,bytes32,bytes32[],bytes32) pure returns (bool)",
+          "function verifyBatchProof(bytes32,bytes32[],bytes32) pure returns (bool)"
+        ];
+      }
+      return ABI;
+    }
+
+    // Prefill from config
+    document.addEventListener("DOMContentLoaded", async ()=>{
+      try{
+        CFG = await loadCfg();
+        if(CFG.rpcUrl) $("rpc").value = CFG.rpcUrl;
+        if(CFG.phase2Address) $("addr").value = CFG.phase2Address;
+        if(CFG.defaultModelId){ $("r_modelId").value = CFG.defaultModelId; $("i_modelId").value = CFG.defaultModelId; $("b_modelId").value = CFG.defaultModelId; }
+        if(CFG.defaultDatasetId) $("m_dsId").value = CFG.defaultDatasetId;
+        if(CFG.defaultDatasetName) $("m_dsName").value = CFG.defaultDatasetName;
+        if(typeof CFG.defaultDatasetVersion==="number") $("m_dsVer").value = String(CFG.defaultDatasetVersion);
+      }catch{}
+    });
+
+    // Reload config
+    $("btnReloadCfg").onclick = async ()=>{
+      $("who").textContent = "Reloading config.json…";
+      try{ CFG = await loadCfg(); $("who").textContent = "Config applied."; }
+      catch(e){ $("who").textContent = "Config reload error: " + (e.message||e); }
+    };
+
+    // Connect MetaMask
+    $("btnConnect").onclick = async ()=>{
+      try{
+        if(!window.ethereum) { $("who").textContent = "MetaMask not found."; return; }
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        const addr = await signer.getAddress();
+        $("who").textContent = "Connected: " + addr;
+
+        const net = await provider.getNetwork();
+        if (CFG.chainId && Number(net.chainId) !== Number(CFG.chainId)) {
+          $("netWarn").innerHTML = "⚠ ChainId mismatch. MetaMask="+Number(net.chainId)+" vs config="+Number(CFG.chainId);
+          $("netWarn").className = "bad";
+        } else { $("netWarn").textContent = ""; $("netWarn").className = "muted"; }
+
+        const abi = await loadABI(CFG);
+        const caddr = $("addr").value.trim();
+        if(!isAddr(caddr)){ $("who").textContent += " — invalid contract address"; return; }
+        contract = new ethers.Contract(caddr, abi, signer);
+      }catch(e){
+        $("who").textContent = "Error: " + (e.message||e);
+      }
+    };
+
+    // ===== Create Model =====
+    async function parseModelFields(){
+      const modelIdRaw = $("m_modelId").value.trim();
+      const modelId = modelIdRaw ? b32(modelIdRaw) : "0x"+"0".repeat(64);
+      const dsVer = BigInt(parseInt($("m_dsVer").value||"1",10));
+      const code = b32($("m_code").value.trim()||"0x0");
+      const arch = b32($("m_arch").value.trim()||"0x0");
+      const uri = $("m_uri").value.trim();
+      const cfg = b32($("m_cfg").value.trim());
+      const anchor = $("m_anchor").value==="true";
+      return { modelId, dsVer, code, arch, uri, cfg, anchor };
+    }
+
+    $("btnCreateById").onclick = async ()=>{
+      $("btnCreateById").disabled=true; $("statusCreate").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const { modelId, dsVer, code, arch, uri, cfg, anchor } = await parseModelFields();
+        const dsId = b32($("m_dsId").value.trim());
+        if(!isB32(dsId)) throw new Error("datasetId must be bytes32");
+        const tx = await contract.createModel(modelId, dsId, dsVer, code, arch, uri, cfg, anchor);
+        const rc = await tx.wait();
+        const ev = rc.logs.map(l=>{ try{ return contract.interface.parseLog(l); }catch{} return null; }).find(e=>e && e.name==="ModelCreated");
+        const newId = ev ? ev.args.modelId : "(see tx logs)";
+        $("statusCreate").textContent = "Done ✅ Tx: "+tx.hash+"  modelId="+newId;
+        // handy prefills:
+        $("r_modelId").value = newId; $("i_modelId").value = newId; $("b_modelId").value = newId;
+      }catch(e){
+        $("statusCreate").textContent = "Error: " + (e.shortMessage||e.message||e);
+      }finally{ $("btnCreateById").disabled=false; }
+    };
+
+    $("btnCreateByName").onclick = async ()=>{
+      $("btnCreateByName").disabled=true; $("statusCreate").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const { modelId, dsVer, code, arch, uri, cfg, anchor } = await parseModelFields();
+        const dsName = $("m_dsName").value.trim();
+        if(!dsName) throw new Error("datasetName is required");
+        const tx = await contract.createModelByName(modelId, dsName, dsVer, code, arch, uri, cfg, anchor);
+        const rc = await tx.wait();
+        const ev = rc.logs.map(l=>{ try{ return contract.interface.parseLog(l); }catch{} return null; }).find(e=>e && e.name==="ModelCreated");
+        const newId = ev ? ev.args.modelId : "(see tx logs)";
+        $("statusCreate").textContent = "Done ✅ Tx: "+tx.hash+"  modelId="+newId;
+        $("r_modelId").value = newId; $("i_modelId").value = newId; $("b_modelId").value = newId;
+      }catch(e){
+        $("statusCreate").textContent = "Error: " + (e.shortMessage||e.message||e);
+      }finally{ $("btnCreateByName").disabled=false; }
+    };
+
+    // ===== Runs =====
+    $("btnStart").onclick = async ()=>{
+      $("btnStart").disabled=true; $("statusStart").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const mid = b32($("r_modelId").value.trim());
+        const cfg = b32($("r_cfg").value.trim());
+        if(!isB32(mid)||!isB32(cfg)) throw new Error("modelId/configHash must be bytes32");
+        const tx = await contract.startTrainingRun(mid, cfg);
+        const rc = await tx.wait();
+        const ev = rc.logs.map(l=>{ try{ return contract.interface.parseLog(l); }catch{} return null; }).find(e=>e && e.name==="TrainingStarted");
+        const runId = ev ? ev.args.runId.toString() : "(see tx logs)";
+        $("statusStart").textContent = "Started ✅ runId="+runId+"  Tx: "+tx.hash;
+        if(runId && runId!=="(see tx logs)") $("f_runId").value = runId;
+      }catch(e){
+        $("statusStart").textContent = "Error: " + (e.shortMessage||e.message||e);
+      }finally{ $("btnStart").disabled=false; }
+    };
+
+    $("btnFinalize").onclick = async ()=>{
+      $("btnFinalize").disabled=true; $("statusFinal").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const runId = BigInt(parseInt($("f_runId").value||"0",10));
+        const w = b32($("f_w").value.trim()); const m = b32($("f_m").value.trim());
+        const cid = $("f_cid").value.trim()?("ipfs://"+normCID($("f_cid").value.trim())):"";
+        if(!runId) throw new Error("runId required");
+        const tx = await contract.finalizeTrainingRun(runId, w, m, cid);
+        await tx.wait();
+        $("statusFinal").textContent = "Finalized ✅ Tx: " + tx.hash;
+      }catch(e){
+        $("statusFinal").textContent = "Error: " + (e.shortMessage||e.message||e);
+      }finally{ $("btnFinalize").disabled=false; }
+    };
+
+    // ===== Single inference =====
+    $("btnHash").onclick = ()=>{
+      const txt = $("txtHash").value || "";
+      const h = ethers.keccak256(ethers.toUtf8Bytes(txt));
+      $("hashOut").textContent = h;
+    };
+    $("btnToInput").onclick = ()=>{ const h=$("hashOut").textContent.trim(); if(h) $("i_ih").value=h; };
+    $("btnToOutput").onclick = ()=>{ const h=$("hashOut").textContent.trim(); if(h) $("i_oh").value=h; };
+
+    $("btnLog").onclick = async ()=>{
+      $("btnLog").disabled=true; $("statusLog").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const mid = b32($("i_modelId").value.trim());
+        const ih = b32($("i_ih").value.trim()); const oh = b32($("i_oh").value.trim()); const xh = b32($("i_xh").value.trim());
+        const cid = $("i_cid").value.trim()?("ipfs://"+normCID($("i_cid").value.trim())):"";
+        if(!isB32(mid)||!isB32(ih)||!isB32(oh)||!isB32(xh)) throw new Error("All hashes must be bytes32");
+        const tx = await contract.logInference(mid, ih, oh, xh, cid);
+        await tx.wait();
+        $("statusLog").textContent = "Logged ✅ Tx: " + tx.hash;
+      }catch(e){
+        $("statusLog").textContent = "Error: " + (e.shortMessage||e.message||e);
+      }finally{ $("btnLog").disabled=false; }
+    };
+
+    // ===== Batch =====
+    $("btnCommit").onclick = async ()=>{
+      $("btnCommit").disabled=true; $("statusBatch").textContent="Sending…";
+      try{
+        if(!contract) throw new Error("Connect MetaMask first.");
+        const mid = b32($("b_modelId").value.trim());
+        const root = b32($("b_root").value.trim());
+        const cnt = BigInt(parseInt($("b_count").value||"0",10));
+        const cid = $("b_cid").value.trim()?("ipfs://"+normCID($("b_cid").value.trim())):"";
+        if(!isB32(mid)||!isB32(root)||!cnt) throw new Error("modelId/batchRoot/count required");
+        const tx = await contract.commitInferenceBatch(mid, root, cnt, cid);
+        await tx.wait();
+        $("statusBatch").textContent = "Committed ✅ Tx: " + tx.hash;
+      }catch(e){
+        $("statusBatch").textContent = "Error: " + (e.shortMessage||e.message||e);
+      }finally{ $("btnCommit").disabled=false; }
+    };
+
+    // ===== Quick verify =====
+    $("btnLeafLocal").onclick = ()=>{
+      try{
+        const ih=b32($("v_ih").value.trim()), oh=b32($("v_oh").value.trim()), xh=b32($("v_xh").value.trim());
+        if(!isB32(ih)||!isB32(oh)||!isB32(xh)) throw new Error("Provide 3 hashes");
+        $("v_leaf").value = ethers.keccak256(ethers.concat([ih,oh,xh]));
+        $("statusVerify").textContent = "Leaf computed.";
+      }catch(e){ $("statusVerify").textContent = "Error: " + (e.message||e); }
+    };
+
+    $("btnVerifyMem").onclick = async ()=>{
+      $("btnVerifyMem").disabled=true; $("statusVerify").textContent="Calling…";
+      try{
+        const ih=b32($("v_ih").value.trim()), oh=b32($("v_oh").value.trim()), xh=b32($("v_xh").value.trim()), root=b32($("v_root").value.trim());
+        const proof = fromCommaList($("v_proof").value).map(b32);
+        const rpc = $("rpc").value.trim();
+        const readProv = provider || (rpc? new ethers.JsonRpcProvider(rpc) : null);
+        if(!readProv) throw new Error("Connect MetaMask or set RPC URL.");
+        const abi = await loadABI(CFG);
+        const c = contract || new ethers.Contract($("addr").value.trim(), abi, readProv);
+        const ok = await c.verifyBatchMembership(ih, oh, xh, proof, root);
+        $("statusVerify").textContent = ok ? "✅ membership true" : "❌ membership false";
+      }catch(e){ $("statusVerify").textContent = "Error: " + (e.message||e); }
+      finally{ $("btnVerifyMem").disabled=false; }
+    };
+
+    $("btnVerifyProof").onclick = async ()=>{
+      $("btnVerifyProof").disabled=true; $("statusVerify").textContent="Calling…";
+      try{
+        const leaf=b32($("v_leaf").value.trim()), root=b32($("v_root").value.trim());
+        const proof = fromCommaList($("v_proof").value).map(b32);
+        const rpc = $("rpc").value.trim();
+        const readProv = provider || (rpc? new ethers.JsonRpcProvider(rpc) : null);
+        if(!readProv) throw new Error("Connect MetaMask or set RPC URL.");
+        const abi = await loadABI(CFG);
+        const c = contract || new ethers.Contract($("addr").value.trim(), abi, readProv);
+        const ok = await c.verifyBatchProof(leaf, proof, root);
+        $("statusVerify").textContent = ok ? "✅ proof true" : "❌ proof false";
+      }catch(e){ $("statusVerify").textContent = "Error: " + (e.message||e); }
+      finally{ $("btnVerifyProof").disabled=false; }
+    };
+  </script>
+</body>
+</html>

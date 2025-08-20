@@ -2,6 +2,12 @@
 ipfs_config.json
 .env
 
+# Exclude tokenizer service (not needed in repo)
+tokenizer_service.py
+
+# Exclude unused HTML
+index[withtokenizer].html
+
 # Local data / artifacts
 mimic_demo.zip
 tokenized_data/

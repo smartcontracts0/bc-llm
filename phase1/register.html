@@ -78,11 +78,11 @@
     <div class="row">
       <div>
         <label>RPC</label>
-        <input id="rpc" value="https://sepolia.infura.io/v3/c2b7a40258a44725896e33d57383c026">
+        <input id="rpc" value="<https://<YOUR_RPC_URL>>">
       </div>
       <div>
         <label>Contract</label>
-        <input id="addr" value="0x877291c5FdbFa77f2961971dE560eAb1B25E3A36">
+        <input id="addr" value="0xYourContractAddress">
       </div>
     </div>
     <div class="row">
@@ -151,6 +151,29 @@
     </div>
   </div>
 
+  <!-- NEW: Authorizations -->
+<div class="card">
+  <h3 style="margin-top:0">Authorizations (grant Phase-2 as operator)</h3>
+  <div class="row">
+    <div>
+      <label>Phase-2 contract address</label>
+      <input id="auth_addr" placeholder="0x..." class="mono">
+    </div>
+    <div>
+      <label>Status</label>
+      <select id="auth_status">
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </select>
+    </div>
+  </div>
+  <div>
+    <button id="btnSetAuth">setAuthorized(addr, status)</button>
+    <span id="authStatus" class="muted" style="margin-left:10px;"></span>
+  </div>
+</div>
+
+
   <!-- Step 3: registerModel -->
   <div class="card">
     <h3 style="margin-top:0">Step 3 — Register model on-chain</h3>
@@ -194,6 +217,42 @@
       <span id="modelStatus" class="muted" style="margin-left:10px;"></span>
     </div>
   </div>
+
+  <!-- NEW: Step 3B — Register model (operator path) -->
+  <div class="card">
+    <h3 style="margin-top:0">Step 3B — Register model (operator path)</h3>
+    <div class="row">
+      <div>
+        <label>modelId (bytes32)</label>
+        <input id="op_modelId" class="mono" placeholder="0x...">
+      </div>
+      <div>
+        <label>datasetId (bytes32)</label>
+        <input id="op_dsId" class="mono" placeholder="0x...">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>datasetVersion (uint256)</label>
+        <input id="op_dsVer" type="number" min="1" step="1" value="1">
+      </div>
+      <div>
+        <label>trainingConfigHash (bytes32)</label>
+        <input id="op_cfgHash" class="mono" placeholder="0x...">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>ownerEOA (address)</label>
+        <input id="op_owner" class="mono" placeholder="0x...">
+      </div>
+    </div>
+    <div>
+      <button id="btnRegisterModelOp">registerModelOperator()</button>
+      <span id="modelOpStatus" class="muted" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
@@ -233,41 +292,55 @@ $('btnUpload').onclick = async () => {
   }
 };
 
+$('btnSetAuth').onclick = async () => {
+  try {
+    if (!signer || !contract) { setStatus('authStatus','Connect MetaMask first.'); return; }
+    const addr = $('auth_addr').value.trim();
+    const status = $('auth_status').value === 'true';
+    if (!isAddress(addr)) { setStatus('authStatus','Invalid address'); return; }
+    setStatus('authStatus','Sending tx…');
+    const tx = await contract.setAuthorized(addr, status);
+    await tx.wait();
+    setStatus('authStatus', `Done ✅ Tx: ${tx.hash}`);
+  } catch (e){
+    console.error(e);
+    setStatus('authStatus', `Error: ${e.message || e}`);
+  }
+
+};
+
+$('btnRegisterModelOp').onclick = async () => {
+  try {
+    if (!signer || !contract) { setStatus('modelOpStatus','Connect MetaMask first.'); return; }
+    const modelId = $('op_modelId').value.trim();
+    const dsId    = $('op_dsId').value.trim();
+    const ver     = parseInt($('op_dsVer').value,10);
+    const cfgHash = $('op_cfgHash').value.trim();
+    const owner   = $('op_owner').value.trim();
+
+    if (!isBytes32(modelId)) { setStatus('modelOpStatus','modelId must be bytes32'); return; }
+    if (!isBytes32(dsId))    { setStatus('modelOpStatus','datasetId must be bytes32'); return; }
+    if (!Number.isInteger(ver) || ver < 1) { setStatus('modelOpStatus','datasetVersion must be >= 1'); return; }
+    if (!isBytes32(cfgHash)) { setStatus('modelOpStatus','trainingConfigHash must be bytes32'); return; }
+    if (!isAddress(owner))   { setStatus('modelOpStatus','ownerEOA must be an address'); return; }
+
+    setStatus('modelOpStatus','Sending tx…');
+    const tx = await contract.registerModelOperator(modelId, dsId, ver, cfgHash, owner);
+    await tx.wait();
+    setStatus('modelOpStatus', `Done ✅ Tx: ${tx.hash}`);
+  } catch (e){
+    console.error(e);
+    setStatus('modelOpStatus', `Error: ${e.message || e}`);
+  }
+};
+
+
+
 /* ---------- MetaMask + contract ---------- */
 let signer = null, contract = null;
 
 const ABI = [
-  {"inputs":[],"stateMutability":"nonpayable","type":"constructor"},
-  {"anonymous":false,"inputs":[
-    {"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},
-    {"indexed":false,"internalType":"uint256","name":"version","type":"uint256"},
-    {"indexed":false,"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},
-    {"indexed":false,"internalType":"string","name":"metadataCID","type":"string"},
-    {"indexed":true,"internalType":"address","name":"registrant","type":"address"},
-    {"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],
-   "name":"DatasetRegistered","type":"event"},
-  {"anonymous":false,"inputs":[
-    {"indexed":true,"internalType":"bytes32","name":"modelId","type":"bytes32"},
-    {"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},
-    {"indexed":false,"internalType":"uint256","name":"datasetVersion","type":"uint256"},
-    {"indexed":false,"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},
-    {"indexed":true,"internalType":"address","name":"registrant","type":"address"},
-    {"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],
-   "name":"ModelRegistered","type":"event"},
-  {"inputs":[{"internalType":"string","name":"name","type":"string"}],
-   "name":"computeDatasetId","outputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],
-   "stateMutability":"pure","type":"function"},
-  {"inputs":[
-    {"internalType":"bytes32","name":"datasetId","type":"bytes32"},
-    {"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},
-    {"internalType":"string","name":"metadataCID","type":"string"}],
-   "name":"registerDataset","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[
-    {"internalType":"bytes32","name":"modelId","type":"bytes32"},
-    {"internalType":"bytes32","name":"datasetId","type":"bytes32"},
-    {"internalType":"uint256","name":"datasetVersion","type":"uint256"},
-    {"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"}],
-   "name":"registerModel","outputs":[],"stateMutability":"nonpayable","type":"function"}
+{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"addr","type":"address"},{"indexed":false,"internalType":"bool","name":"status","type":"bool"}],"name":"AuthorizationSet","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"indexed":false,"internalType":"uint256","name":"version","type":"uint256"},{"indexed":false,"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"indexed":false,"internalType":"string","name":"metadataCID","type":"string"},{"indexed":true,"internalType":"address","name":"registrant","type":"address"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"DatasetRegistered","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"bytes32","name":"modelId","type":"bytes32"},{"indexed":true,"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"indexed":false,"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"indexed":false,"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"indexed":true,"internalType":"address","name":"registrant","type":"address"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"ModelRegistered","type":"event"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"authorized","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"name","type":"string"}],"name":"computeDatasetId","outputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"stateMutability":"pure","type":"function"},{"inputs":[{"internalType":"bytes32","name":"","type":"bytes32"},{"internalType":"uint256","name":"","type":"uint256"}],"name":"datasets","outputs":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"version","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"version","type":"uint256"}],"name":"getDatasetVersion","outputs":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"versionNum","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"}],"name":"getDatasetVersions","outputs":[{"components":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"},{"internalType":"uint256","name":"version","type":"uint256"}],"internalType":"struct DatasetRegistry.DatasetVersion[]","name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"}],"name":"getModel","outputs":[{"components":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"}],"internalType":"struct DatasetRegistry.ModelRecord","name":"","type":"tuple"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"}],"name":"latestDatasetVersion","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"name":"models","outputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"address","name":"registrant","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"string","name":"metadataCID","type":"string"}],"name":"registerDataset","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"},{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"}],"name":"registerModel","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"modelId","type":"bytes32"},{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"datasetVersion","type":"uint256"},{"internalType":"bytes32","name":"trainingConfigHash","type":"bytes32"},{"internalType":"address","name":"ownerEOA","type":"address"}],"name":"registerModelOperator","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_addr","type":"address"},{"internalType":"bool","name":"_status","type":"bool"}],"name":"setAuthorized","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"datasetId","type":"bytes32"},{"internalType":"uint256","name":"version","type":"uint256"},{"internalType":"bytes32","name":"leafHash","type":"bytes32"},{"internalType":"bytes32[]","name":"proof","type":"bytes32[]"}],"name":"verifyFileHash","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"}
 ];
 
 $('btnConnect').onclick = async () => {

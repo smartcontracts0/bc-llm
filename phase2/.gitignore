@@ -1,0 +1,10 @@
+# Local config with real RPC/addresses (keep private)
+config/phase2.config.json
+
+# OS/editor
+.DS_Store
+Thumbs.db
+
+# Node/web build artifacts (if any later)
+dist/
+*.log
